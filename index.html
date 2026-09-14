@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="יומן שדה">
+<meta name="color-scheme" content="light dark">
+<style>
+  html{color-scheme:light dark}
+  body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+</style>
+<title>יומן שדה ומשמורת</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#FAF9F6; --surface:#FFFFFF; --sunk:#F1EFE9;
+  --ink:#1B2320; --ink-2:#4A554F; --muted:#78837D;
+  --line:#DFDCD3; --line-2:#EDEAE3;
+  --accent:#1D6B5A; --accent-ink:#12463A; --accent-soft:#E3EFEA;
+  --warn:#A65A00; --warn-soft:#FBF0DF;
+  --danger:#9E2B2B; --danger-soft:#F9E7E5;
+  --ok:#2F6B3A;
+  --shadow:0 1px 2px rgba(27,35,32,.06),0 4px 14px rgba(27,35,32,.05);
+  --r:10px;
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme:dark){
+    --ground:#121815; --surface:#1A211E; --sunk:#151C19;
+    --ink:#E9EDEA; --ink-2:#B3BDB7; --muted:#8B958F;
+    --line:#2C3531; --line-2:#232B28;
+    --accent:#4FB89C; --accent-ink:#8FD6C2; --accent-soft:#1B2F29;
+    --warn:#E0A050; --warn-soft:#2E2417;
+    --danger:#E08A82; --danger-soft:#2E1D1C;
+    --ok:#6FBF80;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121815; --surface:#1A211E; --sunk:#151C19;
+  --ink:#E9EDEA; --ink-2:#B3BDB7; --muted:#8B958F;
+  --line:#2C3531; --line-2:#232B28;
+  --accent:#4FB89C; --accent-ink:#8FD6C2; --accent-soft:#1B2F29;
+  --warn:#E0A050; --warn-soft:#2E2417;
+  --danger:#E08A82; --danger-soft:#2E1D1C;
+  --ok:#6FBF80;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box}
+html{direction:rtl}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Heebo","Segoe UI",Arial,sans-serif; font-size:15px; line-height:1.5;
+  margin:0; -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{font-family:"Frank Ruhl Libre",Georgia,serif; margin:0; text-wrap:balance}
+button,input,select,textarea{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- chrome ---------- */
+.top{
+  position:sticky; top:0; z-index:30; background:var(--surface);
+  border-bottom:1px solid var(--line);
+}
+.top-in{max-width:1180px; margin:0 auto; padding:10px 16px 0; display:flex; flex-direction:column; gap:8px}
+.brandrow{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+.brand{font-size:19px; font-weight:700; letter-spacing:-.2px}
+.brand small{font-family:"Heebo",sans-serif; font-size:12px; font-weight:400; color:var(--muted); letter-spacing:.4px}
+.statewrap{margin-inline-start:auto; display:flex; align-items:center; gap:8px}
+.pill{
+  font-size:11.5px; font-weight:500; letter-spacing:.3px; padding:3px 9px;
+  border-radius:999px; border:1px solid var(--line); color:var(--ink-2); background:var(--sunk);
+  white-space:nowrap;
+}
+.pill.live{border-color:var(--accent); color:var(--accent-ink); background:var(--accent-soft)}
+.pill.lock{border-color:var(--ok); color:var(--ok); background:transparent}
+.pill.local{border-color:var(--warn); color:var(--warn); background:var(--warn-soft)}
+nav{display:flex; gap:2px; overflow-x:auto; scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  background:none; border:0; border-bottom:2.5px solid transparent; cursor:pointer;
+  padding:9px 13px 10px; font-size:14px; font-weight:500; color:var(--muted); white-space:nowrap;
+}
+nav button[aria-selected="true"]{color:var(--accent-ink); border-bottom-color:var(--accent)}
+nav button .n{
+  font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--muted);
+  background:var(--sunk); border-radius:5px; padding:1px 5px; margin-inline-start:5px;
+}
+
+main{max-width:1180px; margin:0 auto; padding:18px 16px 120px}
+section[hidden]{display:none!important}
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+  padding:16px; box-shadow:var(--shadow);
+}
+.card + .card{margin-top:14px}
+.card > h2{font-size:16px; margin-bottom:3px}
+.card > .sub{font-size:12.5px; color:var(--muted); margin-bottom:14px}
+
+/* ---------- fields ---------- */
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px}
+.f{display:flex; flex-direction:column; gap:5px; min-width:0}
+.f > label{font-size:11.5px; font-weight:500; letter-spacing:.35px; color:var(--muted)}
+.f input,.f select,.f textarea{
+  background:var(--sunk); border:1px solid var(--line); border-radius:8px;
+  padding:9px 10px; font-size:15px; width:100%; min-height:42px;
+}
+.f textarea{min-height:64px; resize:vertical}
+.f input:disabled,.f select:disabled,.f textarea:disabled{opacity:.55}
+.f .hint{font-size:11px; color:var(--muted)}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{
+  border:1px solid var(--line); background:var(--sunk); border-radius:999px;
+  padding:7px 12px; font-size:13.5px; cursor:pointer; min-height:38px;
+}
+.chip[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); font-weight:500}
+
+/* ---------- log table ---------- */
+.scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:13.5px}
+th{
+  background:var(--sunk); text-align:right; font-weight:500; font-size:11.5px; letter-spacing:.3px;
+  color:var(--ink-2); padding:8px 8px; border-bottom:1px solid var(--line); white-space:nowrap; position:sticky; top:0;
+}
+td{border-bottom:1px solid var(--line-2); padding:3px 5px; vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td input,td select{
+  background:transparent; border:1px solid transparent; border-radius:6px;
+  padding:7px 6px; font-size:13.5px; width:100%; min-height:38px;
+}
+td input:hover,td select:hover{border-color:var(--line)}
+td input:focus,td select:focus{background:var(--sunk); border-color:var(--accent)}
+td.mono input, .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
+td.rownum{color:var(--muted); font-family:"IBM Plex Mono",monospace; font-size:11.5px; text-align:center; width:34px}
+tr.hot td.rownum{color:var(--warn); font-weight:500}
+tr.hot{background:var(--warn-soft)}
+.w-s{width:78px} .w-m{width:104px} .w-l{width:150px}
+.tickcell{text-align:center; width:40px}
+.tick{
+  width:26px; height:26px; border:1.5px solid var(--line); border-radius:6px; background:var(--sunk);
+  cursor:pointer; padding:0; line-height:1; font-size:15px; color:transparent;
+}
+.tick[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+.tick:disabled{opacity:.4; cursor:default}
+
+/* ---------- misc ---------- */
+.btn{
+  background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 16px;
+  font-size:14px; font-weight:500; cursor:pointer; min-height:44px;
+}
+.btn.ghost{background:transparent; color:var(--accent-ink); border:1px solid var(--line)}
+.btn.warnb{background:var(--danger)}
+.btn:disabled{opacity:.45; cursor:default}
+.bar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px}
+.spacer{flex:1}
+.note{
+  border-inline-start:3px solid var(--accent); background:var(--accent-soft);
+  padding:11px 13px; border-radius:0 8px 8px 0; font-size:13.5px; color:var(--ink);
+}
+.note.warn{border-color:var(--warn); background:var(--warn-soft)}
+.note.bad{border-color:var(--danger); background:var(--danger-soft)}
+.note b{font-weight:700}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.empty{text-align:center; color:var(--muted); font-size:13.5px; padding:26px 12px}
+.sigbox{
+  border:1px dashed var(--line); border-radius:8px; background:var(--sunk);
+  touch-action:none; width:100%; height:120px; display:block;
+}
+.sigwrap{display:flex; flex-direction:column; gap:6px}
+.sigwrap .row{display:flex; gap:8px; align-items:center}
+.hist{font-size:13px}
+.hist li{
+  display:grid; grid-template-columns:1fr auto; gap:2px 10px;
+  padding:9px 0; border-bottom:1px solid var(--line-2);
+}
+.hist li:last-child{border-bottom:0}
+.hist .what{font-weight:500}
+.hist .when{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); white-space:nowrap}
+.hist .delta{grid-column:1/-1; color:var(--ink-2); font-size:12.5px}
+.hist .from{color:var(--danger); text-decoration:line-through}
+.hist .to{color:var(--ok)}
+.sketch{border:1px solid var(--line); border-radius:8px; background:var(--surface); touch-action:none; width:100%; max-width:560px; height:300px; display:block}
+
+/* ---------- print ---------- */
+.printonly{display:none}
+@media print{
+  @page{size:A4 landscape; margin:9mm}
+  body{background:#fff; color:#000; font-size:9pt}
+  .top,main{display:none!important}
+  .printonly{display:block}
+  .psheet{page-break-after:always}
+  .psheet:last-child{page-break-after:auto}
+  .phead{display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:6px}
+  .ptitle{font-family:"Frank Ruhl Libre",serif; font-size:15pt; font-weight:700}
+  .pform{font-size:8pt; text-align:left}
+  .pgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:2px 10px; font-size:8.5pt; margin-bottom:7px}
+  .pgrid b{font-weight:400; color:#555}
+  table.p{width:100%; border-collapse:collapse; font-size:8pt}
+  table.p th,table.p td{border:.5pt solid #000; padding:2.5px 3px; text-align:right}
+  table.p th{background:#eee; font-weight:600; font-size:7.5pt}
+  .pdecl{font-size:6.6pt; line-height:1.35; margin-top:6px; color:#222}
+  .psig{display:flex; gap:14px; margin-top:8px; font-size:8pt}
+  .psig div{flex:1; border-top:.5pt solid #000; padding-top:3px}
+  .psig img{max-height:34px}
+}
+</style>
+
+</head>
+<body>
+<div class="top">
+  <div class="top-in">
+    <div class="brandrow">
+      <span class="brand">יומן שדה ומשמורת <small>וזה אקולוגיה · ISO 17025 · 294</small></span>
+      <span class="statewrap">
+        <span class="pill" id="syncPill">מקומי</span>
+        <span class="pill lock" id="lockPill" hidden>נעול</span>
+      </span>
+    </div>
+    <nav id="tabs" role="tablist"></nav>
+  </div>
+</div>
+
+<main>
+  <section id="v-day" role="tabpanel"></section>
+  <section id="v-log" role="tabpanel" hidden></section>
+  <section id="v-coc" role="tabpanel" hidden></section>
+  <section id="v-hand" role="tabpanel" hidden></section>
+  <section id="v-hist" role="tabpanel" hidden></section>
+</main>
+
+<div class="printonly" id="printArea"></div>
+
+<script>
+"use strict";
+
+/* standalone build: no Claude runtime here, so every capability resolves null */
+async function useCap(name){
+  try{
+    if(typeof claude !== "undefined" && claude && typeof claude.use === "function"){
+      return await claude.use(name);
+    }
+  }catch(e){}
+  return null;
+}
+
+
+/* ============ reference data — from הנחיות למילוי שדות ============ */
+const SAMPLERS = ["ענב אורן","אורן פלדמן","ראמי גאנם","עמית אורן","דני וזה"];
+const PIDS     = ["XT-103253","XT-103411","XT-100270","T-118415","07-0127"];
+const WEATHER  = ["שמשי","מעונן","מעונן חלקי","גשום","חם","חם מאוד"];
+const LANDUSE  = ["מגורים","תעשייה","מסחר","חקלאי"];
+const SOIL     = ["חרסית","חרסית שמנה","חמרה","לס","כורכר","חול","מצעים","אחר"];
+const COLOR    = ["חום","שחור","אדום","אפור","לבן","צהוב","אחר"];
+const ODOUR    = ["לא","כן","חזק"];
+const MOIST    = ["יבש","לח","רטוב"];
+const TOOL     = ["צנצנת","ליינר"];
+const STYPE    = ["חטף","מורכב"];
+const PACKS    = ["1","2","3","4","5"];
+const TESTS    = ["TPH D+O","ICP מתכות","PFAS","CR6+","PH","SVOC","VOC","TPH GRO"];
+const PID_HOT  = 20;   /* הוראת עבודה 30001 — מעל 20 חל"מ נשקל VOC */
+
+/* ============ state ============ */
+const todayISO = () => new Date().toISOString().slice(0,10);
+const nowHM    = () => new Date().toTimeString().slice(0,5);
+const stamp    = () => new Date().toISOString();
+
+function blankSample(){
+  return {id:crypto.randomUUID(), boring:"", depth:"", time:"", name:"", nameAuto:true,
+    soil:[], soilOther:"", color:[], colorOther:"", odour:"", moist:"",
+    pid:"", pid20:"", note:"", toCoc:false, tool:"", packs:"", stype:"", tests:[], cocNote:"", qc:""};
+}
+
+let S = {
+  v:1, id:"", locked:false,
+  head:{
+    site:"דוגמה — מתחם לבדיקת הזרימה", address:"", date:todayISO(),
+    client:"", clientRep:"", contact:"", lab:"", billTo:"",
+    weather:[], landuse:"", gwl:"", pid:"", pidOpen:"", rig:"",
+    s1:"", s2:"", approver:"", arrive:"", finish:"", tStart:"", tEnd:"",
+    gpsDev:"", gpsVendor:"", accredited:true, ready5556:false, cooled:true,
+    subDrill:false, subSample:false, dayLetter:"A"
+  },
+  samples:[],
+  deviations:[],
+  storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
+  handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
+  sigs:{s1:"", s2:"", by:"", lab:""},
+  sketch:"",
+  changes:[]
+};
+
+let db=null, dayRef=null, sigRef=null, logRef=null, saveT=null, suppress=false;
+
+/* ============ change log — ISO 17025: keep the original value ============ */
+function logChange(label, from, to){
+  if(suppress) return;
+  const f = Array.isArray(from) ? from.join(", ") : (from ?? "");
+  const t = Array.isArray(to)   ? to.join(", ")   : (to ?? "");
+  if(String(f) === String(t)) return;
+  S.changes.push({t:stamp(), who:S.head.s1 || "לא צוין", label, from:String(f), to:String(t)});
+}
+
+function setHead(k, v, label){ logChange(label, S.head[k], v); S.head[k]=v; save(); }
+function setSub(obj, k, v, label){ logChange(label, obj[k], v); obj[k]=v; save(); }
+function setSample(sm, k, v, label){
+  logChange(`${label} · ${sm.name || "דגימה חדשה"}`, sm[k], v);
+  sm[k]=v;
+  if(k==="boring" || k==="depth"){ if(sm.nameAuto) sm.name = autoName(sm); }
+  save();
+}
+function autoName(sm){
+  const b=(sm.boring||"").trim(), d=(sm.depth||"").toString().trim();
+  return b && d ? `${b}-${d}` : b || "";
+}
+
+/* ============ persistence ============ */
+function save(){
+  render();
+  clearTimeout(saveT);
+  saveT = setTimeout(pushRemote, 700);
+  try{ localStorage.setItem("vasa-day", JSON.stringify(S)); }catch(e){}
+}
+async function pushRemote(){
+  if(!dayRef) return;
+  try{
+    const {sigs, sketch, changes, ...rest} = S;
+    await dayRef.set(rest);
+    await sigRef.set({...sigs, sketch});
+    await logRef.set({items:changes.slice(-800)});
+    setPill("synced");
+  }catch(e){ setPill("local"); }
+}
+function setPill(mode){
+  const p=document.getElementById("syncPill");
+  if(mode==="synced"){ p.textContent="מסונכרן"; p.className="pill live"; }
+  else if(mode==="local"){ p.textContent="מקומי בלבד"; p.className="pill local"; }
+  else { p.textContent="מקומי"; p.className="pill"; }
+}
+
+/* ============ derived ============ */
+const cocRows = () => S.samples.filter(s=>s.toCoc);
+function qcNeeded(){
+  const n = cocRows().length;
+  const dup = n===0 ? 0 : (n<10 ? 1 : Math.ceil(n/20));
+  const spl = n<=9 ? 0 : Math.ceil(n*0.1);
+  const haveDup = cocRows().filter(s=>s.qc==="חזרה").length;
+  const haveSpl = cocRows().filter(s=>s.qc==="פיצול").length;
+  return {n, dup, spl, haveDup, haveSpl};
+}
+
+/* ============ tiny DOM helpers ============ */
+const el=(t,a={},...kids)=>{
+  const n=document.createElement(t);
+  for(const[k,v] of Object.entries(a)){
+    if(v===false||v==null) continue;
+    if(k==="class") n.className=v;
+    else if(k.startsWith("on")) n.addEventListener(k.slice(2),v);
+    else if(k==="html") n.innerHTML=v;
+    else n.setAttribute(k, v===true?"":v);
+  }
+  for(const k of kids.flat()) if(k!=null) n.append(k.nodeType?k:document.createTextNode(k));
+  return n;
+};
+const RO = () => S.locked;
+
+function field(label, node, hint){
+  return el("div",{class:"f"}, el("label",{}, label), node, hint?el("span",{class:"hint"},hint):null);
+}
+function txt(val, on, opts={}){
+  const i=el("input",{type:opts.type||"text", value:val||"", placeholder:opts.ph||"",
+    inputmode:opts.im||null, disabled:RO()});
+  i.addEventListener("change", ()=>on(i.value));
+  return i;
+}
+function sel(val, list, on, blank="—"){
+  const s=el("select",{disabled:RO()});
+  s.append(el("option",{value:""},blank));
+  for(const o of list) s.append(el("option",{value:o, selected:val===o}, o));
+  s.addEventListener("change", ()=>on(s.value));
+  return s;
+}
+function multi(vals, list, on){
+  const w=el("div",{class:"chips"});
+  for(const o of list){
+    const on_ = vals.includes(o);
+    w.append(el("button",{class:"chip", type:"button", "aria-pressed":String(on_), disabled:RO(),
+      onclick:()=>on(on_ ? vals.filter(x=>x!==o) : [...vals,o])}, o));
+  }
+  return w;
+}
+function toggle(val, on, label){
+  return el("button",{class:"chip", type:"button", "aria-pressed":String(!!val), disabled:RO(),
+    onclick:()=>on(!val)}, label);
+}
+
+/* ============ signature pad ============ */
+function pad(key, label, store){
+  const c=el("canvas",{class:"sigbox"});
+  const wrap=el("div",{class:"sigwrap"},
+    el("label",{style:"font-size:11.5px;font-weight:500;letter-spacing:.35px;color:var(--muted)"},label), c,
+    el("div",{class:"row"},
+      el("button",{class:"btn ghost", type:"button", disabled:RO(), onclick:()=>{
+        const ctx=c.getContext("2d"); ctx.clearRect(0,0,c.width,c.height);
+        logChange(`חתימה — ${label}`, store[key]?"קיימת":"", ""); store[key]=""; save();
+      }},"נקה")));
+  requestAnimationFrame(()=>{
+    const r=c.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    c.width=r.width*dpr; c.height=r.height*dpr;
+    const ctx=c.getContext("2d"); ctx.scale(dpr,dpr);
+    ctx.lineWidth=2.1; ctx.lineCap="round"; ctx.lineJoin="round";
+    ctx.strokeStyle=getComputedStyle(document.body).color;
+    if(store[key]){ const img=new Image(); img.onload=()=>ctx.drawImage(img,0,0,r.width,r.height); img.src=store[key]; }
+    let drawing=false;
+    const pt=e=>{const b=c.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
+    c.addEventListener("pointerdown",e=>{ if(RO())return; drawing=true; c.setPointerCapture(e.pointerId);
+      const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
+    c.addEventListener("pointermove",e=>{ if(!drawing)return; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
+    const end=()=>{ if(!drawing)return; drawing=false;
+      const had=!!store[key]; store[key]=c.toDataURL("image/png");
+      logChange(`חתימה — ${label}`, had?"קיימת":"", "נחתם"); save(); };
+    c.addEventListener("pointerup",end); c.addEventListener("pointercancel",end);
+  });
+  return wrap;
+}
+
+/* ============ views ============ */
+function viewDay(){
+  const h=S.head;
+  const v=el("div",{});
+  v.append(el("div",{class:"card"},
+    el("h2",{},"פרטי יום הדיגום"),
+    el("div",{class:"sub"},"נכנס פעם אחת ומופיע בשני הטפסים"),
+    el("div",{class:"grid"},
+      field("אתר", txt(h.site,x=>setHead("site",x,"אתר"))),
+      field("כתובת", txt(h.address,x=>setHead("address",x,"כתובת"))),
+      field("תאריך", txt(h.date,x=>setHead("date",x,"תאריך"),{type:"date"})),
+      field("אות היום", sel(h.dayLetter,["A","B","C","D","E","F"],x=>setHead("dayLetter",x,"אות היום")), "יום ראשון A, שני B"),
+      field("לקוח", txt(h.client,x=>setHead("client",x,"לקוח"))),
+      field("נציג הלקוח", txt(h.clientRep,x=>setHead("clientRep",x,"נציג הלקוח"))),
+      field("איש קשר", txt(h.contact,x=>setHead("contact",x,"איש קשר"))),
+      field("מעבדה", txt(h.lab,x=>setHead("lab",x,"מעבדה"))),
+      field("לחייב", txt(h.billTo,x=>setHead("billTo",x,"לחייב"))))));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"צוות וציוד"),
+    el("div",{class:"grid"},
+      field("דוגם 1", sel(h.s1,SAMPLERS,x=>setHead("s1",x,"דוגם 1"))),
+      field("דוגם 2", sel(h.s2,SAMPLERS,x=>setHead("s2",x,"דוגם 2"))),
+      field("מאשר הדו״ח", sel(h.approver,SAMPLERS,x=>setHead("approver",x,"מאשר הדו״ח"))),
+      field("מכשיר PID", sel(h.pid,PIDS,x=>setHead("pid",x,"מכשיר PID"))),
+      field("PID באוויר הפתוח", txt(h.pidOpen,x=>setHead("pidOpen",x,"PID באוויר הפתוח"),{im:"decimal",ph:"ppm"})),
+      field("כלי קידוח", txt(h.rig,x=>setHead("rig",x,"כלי קידוח"))),
+      field("מכשיר GPS", txt(h.gpsDev,x=>setHead("gpsDev",x,"מכשיר GPS"))),
+      field("ספק GPS", txt(h.gpsVendor,x=>setHead("gpsVendor",x,"ספק GPS")),"נדרש כשה-GPS משמש לסימון הקידוחים"))));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"תנאי היום"),
+    el("div",{class:"grid"},
+      field("שעת הגעה", txt(h.arrive,x=>setHead("arrive",x,"שעת הגעה"),{type:"time"})),
+      field("שעת סיום", txt(h.finish,x=>setHead("finish",x,"שעת סיום"),{type:"time"})),
+      field("טמפ׳ תחילת יום", txt(h.tStart,x=>setHead("tStart",x,"טמפ׳ תחילה"),{im:"decimal",ph:"°C"})),
+      field("טמפ׳ סוף יום", txt(h.tEnd,x=>setHead("tEnd",x,"טמפ׳ סיום"),{im:"decimal",ph:"°C"})),
+      field("ייעוד קרקע", sel(h.landuse,LANDUSE,x=>setHead("landuse",x,"ייעוד קרקע")),"לא חובה — ריק מודפס כ־־"),
+      field("מפלס מי תהום", txt(h.gwl,x=>setHead("gwl",x,"מפלס מי תהום"),{im:"decimal",ph:"מ׳"}),"לא חובה")),
+    el("div",{class:"f",style:"margin-top:12px"},
+      el("label",{},"מזג אוויר · בחירה מרובה"),
+      multi(h.weather,WEATHER,x=>setHead("weather",x,"מזג אוויר"))),
+    el("div",{class:"f",style:"margin-top:12px"},
+      el("label",{},"סימונים"),
+      el("div",{class:"chips"},
+        toggle(h.accredited,x=>setHead("accredited",x,"עבודה בהסמכה"),"עבודה בהסמכה"),
+        toggle(h.ready5556,x=>setHead("ready5556",x,"מוכנות 55,56"),"מוכנות ליום דיגום (55,56)"),
+        toggle(h.cooled,x=>setHead("cooled",x,"אחסון בקירור"),"אחסון דגימות בקירור"),
+        toggle(h.subDrill,x=>setHead("subDrill",x,"קידוח בקבלן משנה"),"קידוח — קבלן משנה"),
+        toggle(h.subSample,x=>setHead("subSample",x,"דיגום בקבלן משנה"),"דיגום — קבלן משנה"))),
+    !h.accredited ? el("div",{class:"note warn",style:"margin-top:12px"},
+      el("b",{},"סמליל הרשות יורד מהמשמורת. "),"העבודה מסומנת כלא בהסמכה — לפי הוראת עבודה 30001 סעיף 7ב.") : null));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"שרטוט"),
+    el("div",{class:"sub"},"נדרש בדיגום ערמות ובדיגום מוודא — סעיף 7ג"),
+    sketchPad()));
+  return v;
+}
+
+function sketchPad(){
+  const c=el("canvas",{class:"sketch"});
+  const wrap=el("div",{},c, el("div",{class:"bar"},
+    el("button",{class:"btn ghost",type:"button",disabled:RO(),onclick:()=>{
+      const ctx=c.getContext("2d"); ctx.clearRect(0,0,c.width,c.height);
+      logChange("שרטוט", S.sketch?"קיים":"", ""); S.sketch=""; save();
+    }},"נקה שרטוט")));
+  requestAnimationFrame(()=>{
+    const r=c.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    c.width=r.width*dpr; c.height=r.height*dpr;
+    const ctx=c.getContext("2d"); ctx.scale(dpr,dpr);
+    ctx.lineWidth=2.2; ctx.lineCap="round"; ctx.strokeStyle=getComputedStyle(document.body).color;
+    if(S.sketch){ const img=new Image(); img.onload=()=>ctx.drawImage(img,0,0,r.width,r.height); img.src=S.sketch; }
+    let d=false;
+    const pt=e=>{const b=c.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
+    c.addEventListener("pointerdown",e=>{ if(RO())return; d=true; c.setPointerCapture(e.pointerId);
+      const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
+    c.addEventListener("pointermove",e=>{ if(!d)return; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
+    const end=()=>{ if(!d)return; d=false; S.sketch=c.toDataURL("image/png"); save(); };
+    c.addEventListener("pointerup",end); c.addEventListener("pointercancel",end);
+  });
+  return wrap;
+}
+
+function viewLog(){
+  const v=el("div",{});
+  const tb=el("tbody",{});
+  S.samples.forEach((sm,i)=>{
+    const hot = parseFloat(sm.pid) >= PID_HOT;
+    const r=el("tr",{class:hot?"hot":""},
+      el("td",{class:"rownum"}, String(i+1)),
+      el("td",{class:"mono"}, txt(sm.boring,x=>setSample(sm,"boring",x,"מס׳ קידוח"),{ph:"ק1"})),
+      el("td",{class:"mono w-s"}, txt(sm.depth,x=>setSample(sm,"depth",x,"עומק"),{im:"decimal",ph:"מ׳"})),
+      el("td",{class:"mono w-m"}, txt(sm.name,x=>{sm.nameAuto=false; setSample(sm,"name",x,"שם דגימה");})),
+      el("td",{class:"mono w-s"}, txt(sm.time,x=>setSample(sm,"time",x,"שעה"),{type:"time"})),
+      el("td",{class:"w-l"}, sel(sm.soil[0]||"",SOIL,x=>setSample(sm,"soil",x?[x]:[],"סוג קרקע"))),
+      el("td",{class:"w-m"}, sel(sm.color[0]||"",COLOR,x=>setSample(sm,"color",x?[x]:[],"צבע"))),
+      el("td",{class:"w-s"}, sel(sm.odour,ODOUR,x=>setSample(sm,"odour",x,"ריח"))),
+      el("td",{class:"w-s"}, sel(sm.moist,MOIST,x=>setSample(sm,"moist",x,"לחות"))),
+      el("td",{class:"mono w-s"}, txt(sm.pid,x=>setSample(sm,"pid",x,"PID"),{im:"decimal"})),
+      el("td",{class:"mono w-s"}, txt(sm.pid20,x=>setSample(sm,"pid20",x,"PID 20%"),{im:"decimal"})),
+      el("td",{}, txt(sm.note,x=>setSample(sm,"note",x,"הערות"))),
+      el("td",{class:"tickcell"}, el("button",{class:"tick", type:"button", disabled:RO(),
+        "aria-pressed":String(sm.toCoc), title:"העבר למשמורת",
+        onclick:()=>setSample(sm,"toCoc",!sm.toCoc,"סימון למשמורת")},"✓")));
+    tb.append(r);
+  });
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"יומן שדה"),
+    el("div",{class:"sub"},"טופס 57 · שם הדגימה נבנה אוטומטית ממס׳ הקידוח והעומק, וניתן לדרוס אותו"),
+    S.samples.length ? el("div",{class:"scroll"},
+      el("table",{}, el("thead",{}, el("tr",{},
+        el("th",{},"#"), el("th",{},"מס׳ קידוח"), el("th",{},"עומק"), el("th",{},"שם דגימה"),
+        el("th",{},"שעה"), el("th",{},"סוג קרקע"), el("th",{},"צבע"), el("th",{},"ריח"),
+        el("th",{},"לחות"), el("th",{},"PID"), el("th",{},"PID 20%"), el("th",{},"הערות"),
+        el("th",{},"משמורת"))), tb))
+      : el("div",{class:"empty"},"אין עדיין דגימות. הוסף שורה כדי להתחיל."),
+    el("div",{class:"bar"},
+      el("button",{class:"btn", disabled:RO(), onclick:()=>{
+        const sm=blankSample(); sm.time=nowHM();
+        S.samples.push(sm); logChange("הוספת דגימה","", `שורה ${S.samples.length}`); save();
+      }},"הוסף דגימה"),
+      S.samples.length ? el("button",{class:"btn ghost", disabled:RO(), onclick:()=>{
+        const sm=S.samples[S.samples.length-1];
+        logChange("מחיקת דגימה", sm.name||`שורה ${S.samples.length}`,"");
+        S.samples.pop(); save();
+      }},"מחק אחרונה") : null,
+      el("span",{class:"spacer"}),
+      el("span",{class:"pill"}, `${S.samples.length} דגימות · ${cocRows().length} למשמורת`))));
+
+  const hots=S.samples.filter(s=>parseFloat(s.pid)>=PID_HOT);
+  if(hots.length) v.append(el("div",{class:"card"},
+    el("div",{class:"note warn"}, el("b",{},`${hots.length} דגימות מעל ${PID_HOT} חל״מ. `),
+      "שקול לשלוח ל-VOC ולדגום מטר מעל ומטר מתחת לתיחום הזיהום — הוראת עבודה 30001 סעיף 3.3. ",
+      el("span",{class:"mono"}, hots.map(s=>s.name||"—").join(" · ")))));
+  return v;
+}
+
+function viewCoc(){
+  const v=el("div",{}), rows=cocRows(), q=qcNeeded();
+  const tb=el("tbody",{});
+  rows.forEach((sm,i)=>{
+    const tick=(t)=>el("td",{class:"tickcell"}, el("button",{class:"tick",type:"button",disabled:RO(),
+      "aria-pressed":String(sm.tests.includes(t)), title:t,
+      onclick:()=>setSample(sm,"tests", sm.tests.includes(t)?sm.tests.filter(x=>x!==t):[...sm.tests,t], "בדיקות נדרשות")},"✓"));
+    tb.append(el("tr",{},
+      el("td",{class:"rownum"},String(i+1)),
+      el("td",{class:"mono w-m"}, sm.name||"—"),
+      el("td",{class:"mono w-s"}, sm.depth||"—"),
+      el("td",{class:"mono w-s"}, sm.time||"—"),
+      el("td",{class:"w-m"}, sel(sm.tool,TOOL,x=>setSample(sm,"tool",x,"כלי דיגום"))),
+      el("td",{class:"w-s"}, sel(sm.packs,PACKS,x=>setSample(sm,"packs",x,"מספר אריזות"))),
+      el("td",{class:"w-m"}, sel(sm.stype,STYPE,x=>setSample(sm,"stype",x,"סוג דגימה"))),
+      ...TESTS.map(tick),
+      el("td",{class:"mono w-s"}, sm.pid||"—"),
+      el("td",{class:"w-m"}, sel(sm.qc,["חזרה","פיצול"],x=>setSample(sm,"qc",x,"בקרה"))),
+      el("td",{}, txt(sm.cocNote,x=>setSample(sm,"cocNote",x,"הערות משמורת")))));
+  });
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"שרשרת משמורת"),
+    el("div",{class:"sub"},"טופס 33.1 · הדגימות מגיעות מיומן השדה. עומק, שעה ו-PID עוברים אוטומטית"),
+    rows.length ? el("div",{class:"scroll"},
+      el("table",{}, el("thead",{}, el("tr",{},
+        el("th",{},"#"), el("th",{},"זיהוי דגימה"), el("th",{},"עומק"), el("th",{},"שעה"),
+        el("th",{},"כלי דיגום"), el("th",{},"אריזות"), el("th",{},"סוג"),
+        ...TESTS.map(t=>el("th",{style:"writing-mode:vertical-rl;transform:rotate(180deg);height:74px"},t)),
+        el("th",{},"PID"), el("th",{},"בקרה"), el("th",{},"הערות"))), tb))
+      : el("div",{class:"empty"},"סמן דגימות ביומן השדה כדי להעביר אותן לכאן."),
+    el("div",{class:"bar"},
+      el("span",{class:"pill"}, `${rows.length} דגימות`),
+      el("span",{class:"pill"}, `${rows.reduce((a,s)=>a+s.tests.length,0)} אנליזות`),
+      el("span",{class:"spacer"}),
+      el("button",{class:"btn ghost", onclick:()=>{buildPrint(); window.print();}},"הדפסה / PDF"))));
+
+  if(rows.length) v.append(el("div",{class:"card"},
+    el("h2",{},"בקרות איכות"),
+    el("div",{class:"sub"},"הערה בסוף העבודה — אינה חוסמת"),
+    el("div",{class:(q.haveDup>=q.dup && q.haveSpl>=q.spl)?"note":"note warn"},
+      q.haveDup>=q.dup && q.haveSpl>=q.spl
+        ? el("b",{},"הבקרות הושלמו. ")
+        : el("b",{},"חסרות בקרות. "),
+      `לפי ${q.n} דגימות נדרשות ${q.dup} חזרות (נלקחו ${q.haveDup}) ו-${q.spl} פיצולים (נלקחו ${q.haveSpl}). `,
+      "חזרה ופיצול אינם נשלחים ל-VOC ול-TPH GRO.")));
+  return v;
+}
+
+function viewHand(){
+  const v=el("div",{}), ho=S.handover, st=S.storage;
+  v.append(el("div",{class:"card"},
+    el("h2",{},"אחסון לפני מסירה"),
+    el("div",{class:"sub"},"למלא רק אם הדגימות אוחסנו לפני ההעברה למעבדה"),
+    el("div",{class:"grid"},
+      field("מקום האחסון", txt(st.place,x=>setSub(st,"place",x,"מקום האחסון"))),
+      field("האחראי", txt(st.keeper,x=>setSub(st,"keeper",x,"אחראי אחסון"))),
+      field("תחילת אחסון — תאריך", txt(st.fromD,x=>setSub(st,"fromD",x,"תחילת אחסון"),{type:"date"})),
+      field("תחילת אחסון — שעה", txt(st.fromT,x=>setSub(st,"fromT",x,"שעת תחילת אחסון"),{type:"time"})),
+      field("סיום אחסון — תאריך", txt(st.toD,x=>setSub(st,"toD",x,"סיום אחסון"),{type:"date"})),
+      field("סיום אחסון — שעה", txt(st.toT,x=>setSub(st,"toT",x,"שעת סיום אחסון"),{type:"time"})),
+      field("טמפרטורה 4±2°C", sel(st.tempOk,["תקין","לא תקין"],x=>setSub(st,"tempOk",x,"תקינות טמפרטורה")))),
+    st.tempOk==="לא תקין" ? el("div",{class:"note bad",style:"margin-top:12px"},
+      el("b",{},"נדרש טופס חריגים. "),"יש לתעד את החריגה גם בהערות המשמורת — סעיף 8.") : null));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"מסירה"),
+    el("div",{class:"sub"},"הדוגם מוסר את הדגימות"),
+    el("div",{class:"grid"},
+      field("נמסר ע״י", sel(ho.byName,SAMPLERS,x=>setSub(ho,"byName",x,"נמסר ע״י"))),
+      field("תאריך", txt(ho.byDate,x=>setSub(ho,"byDate",x,"תאריך מסירה"),{type:"date"})),
+      field("שעה", txt(ho.byTime,x=>setSub(ho,"byTime",x,"שעת מסירה"),{type:"time"}))),
+    el("div",{style:"margin-top:12px"}, pad("by","חתימת המוסר",S.sigs))));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"קבלה במעבדה"),
+    el("div",{class:"sub"},"נציג המעבדה חותם כאן — באתר או במשרד בעת איסוף הדגימות"),
+    el("div",{class:"grid"},
+      field("התקבל במעבדה ע״י", txt(ho.labName,x=>setSub(ho,"labName",x,"התקבל במעבדה ע״י"),{ph:"שם נציג המעבדה"})),
+      field("תאריך", txt(ho.labDate,x=>setSub(ho,"labDate",x,"תאריך קבלה"),{type:"date"})),
+      field("שעה", txt(ho.labTime,x=>setSub(ho,"labTime",x,"שעת קבלה"),{type:"time"}))),
+    el("div",{style:"margin-top:12px"}, pad("lab","חתימת נציג המעבדה",S.sigs)),
+    el("div",{class:"bar"},
+      S.locked
+        ? el("button",{class:"btn warnb", onclick:()=>{
+            const why=prompt("סיבת פתיחת הרשומה לעריכה:");
+            if(!why) return;
+            S.v++; logChange("פתיחת רשומה נעולה","נעול",`נפתח — ${why}`);
+            S.locked=false; save();
+          }},"פתח לעריכה")
+        : el("button",{class:"btn", disabled:!S.sigs.lab || !ho.labName, onclick:()=>{
+            logChange("נעילת רשומה","פתוח","נעול"); S.locked=true; save();
+          }},"נעל ושלח"),
+      el("button",{class:"btn ghost", onclick:()=>{buildPrint(); window.print();}},"הדפסה / PDF"),
+      el("span",{class:"spacer"}),
+      !S.sigs.lab ? el("span",{class:"pill"},"ממתין לחתימת המעבדה") : null)));
+
+  v.append(el("div",{class:"card"},
+    el("h2",{},"חתימות הדוגמים"),
+    el("div",{class:"grid"}, pad("s1",`דוגם 1 — ${S.head.s1||"לא נבחר"}`,S.sigs),
+      pad("s2",`דוגם 2 — ${S.head.s2||"לא נבחר"}`,S.sigs))));
+
+  const dv=el("div",{class:"card"},
+    el("h2",{},"חריגות ותוספות"),
+    el("div",{class:"sub"},"כל תוספת קידוחים או חריגה מהתוכנית, כולל העתקת מיקום בגלל תשתיות — סעיף 8"));
+  S.deviations.forEach((d,i)=>{
+    dv.append(el("div",{class:"grid",style:"margin-bottom:10px"},
+      field(`${i+1} · מהות השינוי`, txt(d.what,x=>setSub(d,"what",x,`חריגה ${i+1} — מהות`))),
+      field("הסבר לנחיצות", txt(d.why,x=>setSub(d,"why",x,`חריגה ${i+1} — נחיצות`))),
+      field("מי אישר", txt(d.who,x=>setSub(d,"who",x,`חריגה ${i+1} — מאשר`)))));
+  });
+  if(!S.deviations.length) dv.append(el("div",{class:"empty"},"לא תועדו חריגות."));
+  dv.append(el("div",{class:"bar"}, el("button",{class:"btn ghost", disabled:RO(), onclick:()=>{
+    S.deviations.push({what:"",why:"",who:""}); logChange("הוספת חריגה","","רשומה חדשה"); save();
+  }},"הוסף חריגה")));
+  v.append(dv);
+  return v;
+}
+
+function viewHist(){
+  const v=el("div",{});
+  const items=[...S.changes].reverse();
+  v.append(el("div",{class:"card"},
+    el("h2",{},"תיעוד שינויים"),
+    el("div",{class:"sub"},"כל ערך שהוזן ושונה — הערך המקורי נשמר. נדרש להסמכה ISO 17025 ואינו ניתן למחיקה"),
+    items.length ? el("ul",{class:"hist",style:"list-style:none;margin:0;padding:0"},
+      items.map(c=>el("li",{},
+        el("span",{class:"what"}, c.label),
+        el("span",{class:"when"}, new Date(c.t).toLocaleString("he-IL")),
+        el("span",{class:"delta"},
+          c.from ? el("span",{class:"from"}, c.from) : el("span",{style:"color:var(--muted)"},"ריק"),
+          " ← ",
+          c.to ? el("span",{class:"to"}, c.to) : el("span",{style:"color:var(--muted)"},"ריק"),
+          el("span",{style:"color:var(--muted)"}, `  ·  ${c.who}`))))
+    ) : el("div",{class:"empty"},"עוד לא בוצעו שינויים."),
+    el("div",{class:"bar"},
+      el("span",{class:"pill"}, `${items.length} רשומות`),
+      el("span",{class:"spacer"}),
+      el("button",{class:"btn ghost", onclick:exportJson},"ייצוא נתונים"))));
+  return v;
+}
+
+/* ============ print ============ */
+function pv(x){ return (x===""||x==null||(Array.isArray(x)&&!x.length)) ? "־" : (Array.isArray(x)?x.join(", "):x); }
+function buildPrint(){
+  const h=S.head, rows=cocRows();
+  const kv=(o)=>el("div",{class:"pgrid"}, Object.entries(o).map(([k,val])=>
+    el("div",{}, el("b",{},k+": "), pv(val))));
+  const sig=(label,img)=>el("div",{}, label+": ", img?el("img",{src:img}):"");
+
+  const sheet1=el("div",{class:"psheet"},
+    el("div",{class:"phead"}, el("div",{class:"ptitle"},"יומן שדה"),
+      el("div",{class:"pform"},"טופס 57 · וזה אקולוגיה בע״מ")),
+    kv({"אתר":h.site,"כתובת":h.address,"תאריך":h.date,"כלי קידוח":h.rig,
+        "דוגם 1":h.s1,"דוגם 2":h.s2,"לקוח":h.client,"נציג הלקוח":h.clientRep,
+        "PID":h.pid,"PID באוויר פתוח":h.pidOpen,"מזג אוויר":h.weather,"אות היום":h.dayLetter,
+        "שעת הגעה":h.arrive,"שעת סיום":h.finish,"טמפ׳ תחילה":h.tStart,"טמפ׳ סיום":h.tEnd,
+        "GPS":h.gpsDev,"ספק GPS":h.gpsVendor,"מוכנות 55,56":h.ready5556?"בוצע":"־","אחסון בקירור":h.cooled?"כן":"לא"}),
+    el("table",{class:"p"}, el("thead",{}, el("tr",{},
+      ["#","מס׳ קידוח","שם דגימה","עומק","שעה","סוג קרקע","צבע","ריח","לחות","PID","PID 20%","הערות"]
+        .map(t=>el("th",{},t)))),
+      el("tbody",{}, S.samples.map((s,i)=>el("tr",{},
+        el("td",{},String(i+1)), el("td",{},pv(s.boring)), el("td",{},pv(s.name)), el("td",{},pv(s.depth)),
+        el("td",{},pv(s.time)), el("td",{},pv(s.soil)), el("td",{},pv(s.color)), el("td",{},pv(s.odour)),
+        el("td",{},pv(s.moist)), el("td",{},pv(s.pid)), el("td",{},pv(s.pid20)), el("td",{},pv(s.note)))))),
+    S.deviations.length ? el("div",{class:"pdecl"},"חריגות ותוספות: " +
+      S.deviations.map(d=>`${d.what} — ${d.why} — אישר: ${d.who}`).join(" | ")) : null,
+    el("div",{class:"psig"}, sig("חתימת דוגם 1",S.sigs.s1), sig("חתימת דוגם 2",S.sigs.s2)));
+
+  const sheet2=el("div",{class:"psheet"},
+    el("div",{class:"phead"}, el("div",{class:"ptitle"},"טופס משמורת לדיגום קרקע ודרישת בדיקות"),
+      el("div",{class:"pform"},"טופס 33.1 · וזה אקולוגיה בע״מ" +
+        (h.accredited ? " · הרשות הלאומית להסמכת מעבדות · 294" : ""))),
+    kv({"אתר":h.site,"כתובת":h.address,"תאריך":h.date,"מעבדה":h.lab,"לחייב":h.billTo,
+        "מזג אוויר":h.weather,"ייעוד הקרקע":h.landuse,"מפלס מי תהום":h.gwl,"PID":h.pid,
+        "שם הדוגם":h.s1,"מאשר הדו״ח":h.approver,"לקוח":h.client,"איש קשר":h.contact}),
+    el("table",{class:"p"}, el("thead",{}, el("tr",{},
+      ["#","זיהוי דגימה","עומק","שעת דיגום","כלי דיגום","אריזות","סוג",...TESTS,"PID","בקרה","הערות"]
+        .map(t=>el("th",{},t)))),
+      el("tbody",{}, rows.map((s,i)=>el("tr",{},
+        el("td",{},String(i+1)), el("td",{},pv(s.name)), el("td",{},pv(s.depth)), el("td",{},pv(s.time)),
+        el("td",{},pv(s.tool)), el("td",{},pv(s.packs)), el("td",{},pv(s.stype)),
+        ...TESTS.map(t=>el("td",{style:"text-align:center"}, s.tests.includes(t)?"✓":"")),
+        el("td",{},pv(s.pid)), el("td",{},pv(s.qc)), el("td",{},pv(s.cocNote)))))),
+    el("div",{class:"pdecl"},
+      h.accredited
+        ? "הדיגומים הנכללים בדו״ח זה בוצעו בהתאם לדרישות ההסמכה של הרשות הלאומית להסמכת מעבדות ולפי דרישות התקן ISO/IEC 17025. הרשות אינה אחראית לתוצאות הדיגומים ואין ההסמכה מהווה אישור לאיכות הקרקע. יש להתייחס למסמך זה במלואו ואין להעתיק ממנו למסמכים אחרים. "
+        : "העבודה אינה בהסמכה. ",
+      "הצהרה: טופס זה מתייחס רק לפריטים שנדגמו. סוג דגימה: ח = חטף, מ = מורכב. ",
+      `קידוח בקבלן משנה: ${h.subDrill?"כן":"לא"}. דיגום בקבלן משנה: ${h.subSample?"כן":"לא"}. `,
+      S.storage.place ? `אחסון: ${S.storage.place}, אחראי ${S.storage.keeper}, ${S.storage.fromD} ${S.storage.fromT} עד ${S.storage.toD} ${S.storage.toT}, טמפרטורה ${S.storage.tempOk}. ` : "",
+      "קריאת PID אינה נחשבת לבדיקה כמותית ואינה מחליפה אנליזה במעבדה."),
+    el("div",{class:"psig"},
+      sig(`נמסר ע״י ${pv(S.handover.byName)} · ${pv(S.handover.byDate)} ${pv(S.handover.byTime)}`, S.sigs.by),
+      sig(`התקבל במעבדה ע״י ${pv(S.handover.labName)} · ${pv(S.handover.labDate)} ${pv(S.handover.labTime)}`, S.sigs.lab)));
+
+  const area=document.getElementById("printArea");
+  area.textContent=""; area.append(sheet1, sheet2);
+}
+
+async function exportJson(){
+  const blob = JSON.stringify({...S, exportedAt:stamp()}, null, 2);
+  const dl = await useCap("downloads");
+  const fn = `יום-דיגום-${S.head.date}.json`;
+  if(dl){ try{ await dl.save({filename:fn, data:blob}); return; }catch(e){} }
+  const a=el("a",{href:URL.createObjectURL(new Blob([blob],{type:"application/json"})), download:fn});
+  document.body.append(a); a.click(); a.remove();
+}
+
+/* ============ shell ============ */
+const TABS=[
+  {id:"day", label:"יום דיגום", view:viewDay, count:()=>null},
+  {id:"log", label:"יומן שדה", view:viewLog, count:()=>S.samples.length},
+  {id:"coc", label:"שרשרת משמורת", view:viewCoc, count:()=>cocRows().length},
+  {id:"hand",label:"מסירה וחתימות", view:viewHand, count:()=>null},
+  {id:"hist",label:"תיעוד שינויים", view:viewHist, count:()=>S.changes.length},
+];
+let active="day";
+
+function render(){
+  const nav=document.getElementById("tabs");
+  nav.textContent="";
+  for(const t of TABS){
+    const c=t.count();
+    nav.append(el("button",{role:"tab", "aria-selected":String(active===t.id),
+      onclick:()=>{active=t.id; render(); window.scrollTo(0,0);}},
+      t.label, c!=null?el("span",{class:"n"},String(c)):null));
+  }
+  for(const t of TABS){
+    const s=document.getElementById("v-"+t.id);
+    s.hidden = active!==t.id;
+    if(!s.hidden){ s.textContent=""; s.append(t.view()); }
+  }
+  document.getElementById("lockPill").hidden = !S.locked;
+}
+
+/* seed one example row so the tool opens in a working state */
+function seed(){
+  const a=blankSample(); Object.assign(a,{boring:"ק1", depth:"1", name:"ק1-1", time:"08:20",
+    soil:["חמרה"], color:["חום"], odour:"לא", moist:"יבש", pid:"0.4", pid20:"0.3", note:"דוגמה"});
+  const b=blankSample(); Object.assign(b,{boring:"ק1", depth:"3", name:"ק1-3", time:"08:45",
+    soil:["חרסית"], color:["אפור"], odour:"כן", moist:"לח", pid:"28.5", pid20:"27.9",
+    note:"דוגמה", toCoc:true, tool:"ליינר", packs:"2", stype:"חטף", tests:["TPH D+O","VOC"]});
+  S.samples=[a,b];
+}
+
+(async function init(){
+  try{
+    const cached=localStorage.getItem("vasa-day");
+    if(cached){ S=JSON.parse(cached); }
+  }catch(e){}
+  if(!S.samples.length) seed();
+  if(!S.id) S.id = "day-" + S.head.date;
+  render();
+
+  db = await useCap("db");
+  if(db){
+    dayRef = db.doc(`days/${S.id}`);
+    sigRef = db.doc(`days/${S.id}/sig/signatures`);
+    logRef = db.doc(`days/${S.id}/log/changes`);
+    try{
+      const [d,g,l] = await Promise.all([dayRef.get(), sigRef.get(), logRef.get()]);
+      suppress=true;
+      if(d.exists) Object.assign(S, d.data());
+      if(g.exists){ const {sketch, ...sg}=g.data(); S.sigs={...S.sigs,...sg}; S.sketch=sketch||""; }
+      if(l.exists) S.changes = l.data().items || [];
+      suppress=false;
+      setPill("synced"); render();
+    }catch(e){ setPill("local"); }
+    dayRef.onSnapshot(snap=>{
+      if(!snap.exists || snap.metadata.hasPendingWrites) return;
+      suppress=true; Object.assign(S, snap.data()); suppress=false;
+      setPill("synced"); render();
+    }, ()=>setPill("local"));
+  } else {
+    setPill("local");
+  }
+})();
+</script>
+
+</body>
+</html>

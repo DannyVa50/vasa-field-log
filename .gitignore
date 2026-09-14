@@ -1,0 +1,26 @@
+# Windows
+Thumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+
+# Python (build script)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Office lock files
+~$*
+
+# Local scratch / exports
+*.local.html
+exports/
