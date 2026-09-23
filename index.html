@@ -159,6 +159,22 @@ tr.hot{background:var(--warn-soft)}
 .shot{max-width:100%; border:1px solid var(--line); border-radius:8px; display:block}
 .seg{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap}
 
+/* ---------- records ---------- */
+.docbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.doccur{background:none; border:0; padding:0; cursor:pointer; font-size:13.5px; color:var(--muted); text-align:right; min-height:40px; min-width:0; overflow-wrap:anywhere}
+.doccur b{color:var(--ink); font-weight:500}
+.btn.sm{min-height:40px; padding:7px 13px; font-size:13px}
+.docs{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.docrow{
+  width:100%; display:grid; grid-template-columns:1fr auto; gap:3px 12px; align-items:center; text-align:right;
+  background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:11px 13px; cursor:pointer; min-height:56px;
+}
+.docrow:hover{border-color:var(--accent)}
+.docrow.cur{background:var(--accent-soft); border-color:var(--accent)}
+.docrow .dt{font-weight:500; font-size:14.5px; overflow-wrap:anywhere}
+.docrow .dm{grid-column:1; font-size:12px; color:var(--muted)}
+.docrow .tags{grid-column:2; grid-row:1 / 3; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end}
+
 /* ---------- print — mirrors forms 57 and 33.1 ---------- */
 .printonly{display:none}
 @media print{
@@ -198,13 +214,16 @@ tr.hot{background:var(--warn-soft)}
       <span class="statewrap">
         <span class="pill" id="syncPill">מקומי</span>
         <span class="pill lock" id="lockPill" hidden>נעול</span>
+        <span class="pill local" id="fullPill" hidden>האחסון במכשיר מלא — השינוי האחרון לא נשמר</span>
       </span>
     </div>
+    <div class="docbar" id="docbar"></div>
     <nav id="tabs" role="tablist"></nav>
   </div>
 </div>
 
 <main>
+  <section id="v-docs" role="tabpanel" hidden></section>
   <section id="v-day" role="tabpanel"></section>
   <section id="v-log" role="tabpanel" hidden></section>
   <section id="v-coc" role="tabpanel" hidden></section>
@@ -258,29 +277,61 @@ function blankSample(boring){
     toSplit:false, sp:{tool:"", packs:"", stype:"", tests:[], extra:[], note:""}};
 }
 
-let S = {
-  v:1, id:"", locked:false,
-  head:{
-    site:"", address:"", date:todayISO(), client:"", clientRep:"", contact:"", billTo:"",
-    weather:[], landuse:"", gwl:"", pid:"", pidOpen:"", rig:"", rigOther:"",
-    s1:"", s2:"", approver:"", arrive:"", finish:"", tStart:"", tEnd:"",
-    accredited:true, ready5556:false, cooled:true, subDrill:false, subSample:false,
-    dayLetter:"A", lab:"", labSplit:"", extraTests:["","",""]
-  },
-  samples:[], deviations:[],
-  storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
-  handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
-  sigs:{s1:"", s2:"", by:"", lab:""},
-  sketch:"", sketchPhoto:"", changes:[]
-};
+const newId = () => `day-${todayISO()}-${crypto.randomUUID().slice(0,8)}`;
 
-let db=null, dayRef=null, sigRef=null, logRef=null, shotRef=null, saveT=null, suppress=false;
+function blankDay(id){
+  return {
+    v:1, id:id||newId(), locked:false, updated:"",
+    head:{
+      site:"", address:"", date:todayISO(), client:"", clientRep:"", contact:"", billTo:"",
+      weather:[], landuse:"", gwl:"", pid:"", pidOpen:"", rig:"", rigOther:"",
+      s1:"", s2:"", approver:"", arrive:"", finish:"", tStart:"", tEnd:"",
+      accredited:true, ready5556:false, cooled:true, subDrill:false, subSample:false,
+      dayLetter:"A", lab:"", labSplit:"", extraTests:["","",""]
+    },
+    samples:[blankSample()], deviations:[],
+    storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
+    handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
+    sigs:{s1:"", s2:"", by:"", lab:""},
+    sketch:"", sketchPhoto:"", changes:[]
+  };
+}
+
+/* משלים שדות חסרים ברשומות שנשמרו בגרסאות קודמות */
+function normalize(d){
+  const b=blankDay(d.id);
+  const n={...b, ...d,
+    head:{...b.head, ...(d.head||{})}, storage:{...b.storage, ...(d.storage||{})},
+    handover:{...b.handover, ...(d.handover||{})}, sigs:{...b.sigs, ...(d.sigs||{})}};
+  if(!Array.isArray(n.head.extraTests)) n.head.extraTests=["","",""];
+  n.samples=(d.samples||[]).map(s=>({...blankSample(), ...s, sp:{...blankSample().sp, ...(s.sp||{})}}));
+  if(!n.samples.length) n.samples=[blankSample()];
+  if(!n.id) n.id="day-"+n.head.date;
+  return n;
+}
+
+let S = blankDay();
+
+let db=null, unsubDay=null, saveT=null, suppress=false, flash=null;
 
 /* ============ change log ============
    נרשם רק אחרי שהשדה נבחר והשינוי התייצב — לא תוך כדי הבחירה.
    מבצע השינוי הוא תמיד דוגם 1. */
 const COMMIT_MS = 3000;
 const pendingChg = new Map();
+
+function commitChange(key){
+  const rec = pendingChg.get(key);
+  pendingChg.delete(key);
+  if(!rec) return false;
+  clearTimeout(rec.timer);
+  if(String(rec.from) === String(rec.to)) return false;
+  S.changes.push({t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label:rec.label,
+                  from:String(rec.from), to:String(rec.to)});
+  return true;
+}
+/* לפני מעבר רשומה או סגירת הדף — שינוי שטרם התייצב לא ילך לאיבוד או יירשם ברשומה הלא נכונה */
+function flushChanges(){ for(const k of [...pendingChg.keys()]) commitChange(k); }
 
 function logChange(label, from, to, key){
   if(suppress) return;
@@ -290,15 +341,8 @@ function logChange(label, from, to, key){
   const prev = pendingChg.get(key);
   const origin = prev ? prev.from : f;
   if(prev) clearTimeout(prev.timer);
-  const timer = setTimeout(()=>{
-    const rec = pendingChg.get(key);
-    pendingChg.delete(key);
-    if(!rec || String(rec.from) === String(rec.to)) return;
-    S.changes.push({t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label,
-                    from:String(rec.from), to:String(rec.to)});
-    save();
-  }, COMMIT_MS);
-  pendingChg.set(key, {from:origin, to:t, timer});
+  const timer = setTimeout(()=>{ if(commitChange(key)) save(); }, COMMIT_MS);
+  pendingChg.set(key, {label, from:origin, to:t, timer});
 }
 
 function setHead(k,v,label){ logChange(label,S.head[k],v,"head."+k); S.head[k]=v; save(); }
@@ -318,23 +362,139 @@ function autoName(sm){
   return b && d ? `${b}-${d}` : b || "";
 }
 
+/* ============ records — כל יום דיגום הוא רשומה נפרדת ============ */
+const K_INDEX="vasa-index", K_CUR="vasa-current", K_OLD="vasa-day", kDoc=id=>"vasa-doc:"+id;
+let localIdx=[], remoteIdx=new Map(), storageFull=false;
+
+function fmtDate(iso){ if(!iso) return ""; const [y,m,d]=iso.split("-"); return `${d}.${m}.${y.slice(2)}`; }
+function docTitle(d){
+  const h=d.head||{};
+  return [(h.site||"").trim()||"ללא שם אתר", fmtDate(h.date), h.dayLetter?`יום ${h.dayLetter}`:"", h.s1||""]
+    .filter(Boolean).join(" · ");
+}
+function meta(d){
+  return {id:d.id, title:docTitle(d), date:d.head.date||"", client:d.head.client||"",
+    n:d.samples.filter(s=>s.boring||s.depth||s.name).length, locked:!!d.locked, updated:d.updated||""};
+}
+const pristine = d => !d.updated;
+function readJSON(key){ try{ return JSON.parse(localStorage.getItem(key)); }catch(e){ return null; } }
+
+function allDocs(){
+  const m=new Map();
+  const put=e=>{ const o=m.get(e.id); if(!o || (e.updated||"")>=(o.updated||"")) m.set(e.id,e); };
+  remoteIdx.forEach(put); localIdx.forEach(put); put(meta(S));
+  return [...m.values()].sort((a,b)=>(b.date||"").localeCompare(a.date||"") || (b.updated||"").localeCompare(a.updated||""));
+}
+
 /* ============ persistence ============ */
+function persistLocal(){
+  try{
+    localStorage.setItem(kDoc(S.id), JSON.stringify(S));
+    localIdx = localIdx.filter(e=>e.id!==S.id).concat([meta(S)]);
+    localStorage.setItem(K_INDEX, JSON.stringify(localIdx));
+    localStorage.setItem(K_CUR, S.id);
+    storageFull=false;
+  }catch(e){ storageFull=true; }
+}
 function save(){
+  S.updated=stamp();
+  persistLocal();
   render();
   clearTimeout(saveT);
   saveT = setTimeout(pushRemote, 700);
-  try{ localStorage.setItem("vasa-day", JSON.stringify(S)); }catch(e){}
 }
+const refsFor = id => ({
+  day:db.doc(`days/${id}`), sig:db.doc(`days/${id}/sig/signatures`),
+  log:db.doc(`days/${id}/log/changes`), shot:db.doc(`days/${id}/shot/sketch`),
+  idx:db.doc(`index/${id}`)});
 async function pushRemote(){
-  if(!dayRef) return;
+  if(!db || pristine(S)) return;
+  /* נלכד מראש — אם הדוגם עובר רשומה באמצע, הכתיבה נשארת ברשומה הנכונה */
+  const r=refsFor(S.id), m=meta(S);
+  const {sigs, sketch, sketchPhoto, changes, ...rest} = S;
   try{
-    const {sigs, sketch, sketchPhoto, changes, ...rest} = S;
-    await dayRef.set(rest);
-    await sigRef.set({...sigs, sketch});
-    await logRef.set({items:changes.slice(-800)});
-    if(shotRef) await shotRef.set({photo:sketchPhoto||""});
+    await r.day.set(rest);
+    await r.sig.set({...sigs, sketch});
+    await r.log.set({items:changes.slice(-800)});
+    await r.shot.set({photo:sketchPhoto||""});
+    await r.idx.set(m);
     setPill("synced");
   }catch(e){ setPill("local"); }
+}
+
+async function attachRemote(){
+  if(!db) return;
+  const id=S.id, r=refsFor(id);
+  try{
+    const [d,g,l,p]=await Promise.all([r.day.get(),r.sig.get(),r.log.get(),r.shot.get()]);
+    if(S.id!==id) return;
+    /* data() מוחזר מוקפא — עותק, כדי שאפשר יהיה להמשיך לערוך */
+    suppress=true;
+    const next={...S};
+    if(d.exists) Object.assign(next, structuredClone(d.data()));
+    if(g.exists){ const {sketch,...sg}=structuredClone(g.data()); next.sigs={...next.sigs,...sg}; next.sketch=sketch||""; }
+    if(l.exists) next.changes=structuredClone(l.data().items||[]);
+    if(p.exists) next.sketchPhoto=p.data().photo||"";
+    S=normalize(next);
+    suppress=false;
+    if(d.exists) persistLocal();
+    setPill("synced"); render();
+  }catch(e){ suppress=false; setPill("local"); }
+  if(S.id!==id) return;
+  unsubDay=r.day.onSnapshot(s=>{
+    if(!s.exists||s.metadata.hasPendingWrites||S.id!==id) return;
+    suppress=true; S=normalize({...S, ...structuredClone(s.data())}); suppress=false;
+    setPill("synced"); render();
+  },()=>setPill("local"));
+}
+
+async function switchTo(next){
+  flushChanges();
+  clearTimeout(saveT);
+  if(!pristine(S)){ persistLocal(); await pushRemote(); }
+  if(unsubDay){ unsubDay(); unsubDay=null; }
+  S=next;
+  try{ localStorage.setItem(K_CUR, S.id); }catch(e){}
+  active="day"; render(); window.scrollTo(0,0);
+  await attachRemote();
+}
+async function openDoc(id){
+  if(id===S.id){ active="day"; flash=null; render(); window.scrollTo(0,0); return; }
+  const d=readJSON(kDoc(id));
+  if(!d){
+    /* רשומה שנפתחה במכשיר אחר — פותחים רק אם המאגר המשותף מחזיר אותה, כדי לא לדרוס אותה ברשומה ריקה */
+    try{
+      if(!db || !(await refsFor(id).day.get()).exists){ alert("הרשומה לא נמצאה במאגר המשותף."); return; }
+    }catch(e){ alert("אין חיבור למאגר המשותף. נסה שוב כשיש קליטה."); return; }
+  }
+  flash=null;
+  await switchTo(normalize(d||{id}));
+}
+async function newDoc(){
+  if(pristine(S)){ active="day"; flash=null; render(); window.scrollTo(0,0); return; }
+  const prevTitle=docTitle(S);
+  await switchTo(blankDay());
+  flash=`הרשומה ״${prevTitle}״ נשמרה. אפשר לחזור אליה מלשונית רשומות.`;
+  render();
+}
+
+/* רשומת היום היחידה מהגרסה הקודמת הופכת לרשומה הראשונה ברשימה */
+function migrateOld(){
+  const old=readJSON(K_OLD);
+  if(!old) return;
+  try{
+    const d=normalize(old);
+    if(d.changes.length || d.head.site || d.samples.some(s=>s.boring||s.depth)){
+      if(!d.updated) d.updated=stamp();
+      if(!localStorage.getItem(kDoc(d.id))){
+        localStorage.setItem(kDoc(d.id), JSON.stringify(d));
+        localIdx=localIdx.filter(e=>e.id!==d.id).concat([meta(d)]);
+        localStorage.setItem(K_INDEX, JSON.stringify(localIdx));
+      }
+      if(!localStorage.getItem(K_CUR)) localStorage.setItem(K_CUR, d.id);
+    }
+    localStorage.removeItem(K_OLD);
+  }catch(e){}
 }
 function setPill(mode){
   const p=document.getElementById("syncPill");
@@ -878,8 +1038,37 @@ async function exportJson(){
   document.body.append(a); a.click(); a.remove();
 }
 
+/* ============ records list ============ */
+function viewDocs(){
+  const docs=allDocs(), onDevice=new Set(localIdx.map(e=>e.id));
+  const when=iso=>new Date(iso).toLocaleString("he-IL",{dateStyle:"short",timeStyle:"short"});
+  const list=el("ul",{class:"docs"});
+  for(const d of docs){
+    const cur=d.id===S.id;
+    list.append(el("li",{},el("button",{type:"button",class:"docrow"+(cur?" cur":""),
+        "aria-current":cur?"true":null, onclick:()=>openDoc(d.id)},
+      el("span",{class:"dt"},d.title),
+      el("span",{class:"dm"},[d.client, `${d.n||0} דגימות`, d.updated?`עודכן ${when(d.updated)}`:"טרם נשמרה"]
+        .filter(Boolean).join(" · ")),
+      el("span",{class:"tags"},
+        cur?el("span",{class:"pill live"},"פתוחה כעת"):null,
+        d.locked?el("span",{class:"pill lock"},"נעולה"):null,
+        !cur&&!onDevice.has(d.id)?el("span",{class:"pill"},"במאגר המשותף"):null))));
+  }
+  return el("div",{},el("div",{class:"card"},
+    el("h2",{},"רשומות"),
+    el("div",{class:"sub"},(db?"ימי הדיגום במכשיר הזה ובמאגר המשותף. ":"ימי הדיגום שנשמרו במכשיר הזה. ")+
+      "שם הרשומה נבנה מהאתר, התאריך, אות היום ודוגם 1"),
+    el("div",{class:"bar",style:"margin:0 0 14px"},
+      el("button",{class:"btn",type:"button",onclick:newDoc},"שמירה ורשומה חדשה"),
+      el("span",{class:"spacer"}),
+      el("span",{class:"pill"},`${docs.length} רשומות`)),
+    list));
+}
+
 /* ============ shell ============ */
 const TABS=[
+  {id:"docs", label:"רשומות", view:viewDocs, count:()=>allDocs().length},
   {id:"day", label:"יום דיגום", view:viewDay, count:()=>null},
   {id:"log", label:"יומן שדה", view:viewLog, count:()=>S.samples.length},
   {id:"coc", label:"שרשרת משמורת", view:()=>custodyView("coc"), count:()=>cocRows().length},
@@ -895,47 +1084,46 @@ function render(){
   for(const t of TABS){
     const c=t.count();
     nav.append(el("button",{role:"tab","aria-selected":String(active===t.id),
-      onclick:()=>{active=t.id; render(); window.scrollTo(0,0);}},
+      onclick:()=>{active=t.id; flash=null; render(); window.scrollTo(0,0);}},
       t.label, c!=null?el("span",{class:"n"},String(c)):null));
   }
   for(const t of TABS){
     const s=document.getElementById("v-"+t.id);
     s.hidden = active!==t.id;
-    if(!s.hidden){ s.textContent=""; s.append(t.view()); }
+    if(!s.hidden){
+      s.textContent="";
+      if(flash) s.append(el("div",{class:"note",style:"margin-bottom:14px"},flash));
+      s.append(t.view());
+    }
   }
+  const bar=document.getElementById("docbar");
+  bar.textContent="";
+  bar.append(
+    el("button",{class:"doccur",type:"button",title:"לכל הרשומות",onclick:()=>{active="docs"; flash=null; render();}},
+      "רשומה: ",el("b",{},docTitle(S))),
+    el("span",{class:"spacer"}),
+    el("button",{class:"btn ghost sm",type:"button",onclick:newDoc},"שמירה ורשומה חדשה"));
   document.getElementById("lockPill").hidden=!S.locked;
+  document.getElementById("fullPill").hidden=!storageFull;
 }
 
+addEventListener("pagehide",()=>{ flushChanges(); if(!pristine(S)){ S.updated=stamp(); persistLocal(); } });
+
 (async function init(){
-  try{ const c=localStorage.getItem("vasa-day"); if(c) S=JSON.parse(c); }catch(e){}
-  if(!S.head.extraTests) S.head.extraTests=["","",""];
-  S.samples = (S.samples||[]).map(s=>({...blankSample(), ...s, sp:{...blankSample().sp, ...(s.sp||{})}}));
-  if(!S.samples.length) S.samples=[blankSample()];   /* שורה ריקה אחת */
-  if(!S.id) S.id="day-"+S.head.date;
+  localIdx=readJSON(K_INDEX)||[];
+  migrateOld();
+  let cur=null; try{ cur=localStorage.getItem(K_CUR); }catch(e){}
+  const d=cur?readJSON(kDoc(cur)):null;
+  S = d ? normalize(d) : blankDay();
   render();
 
   db=await useCap("db");
   if(db){
-    dayRef =db.doc(`days/${S.id}`);
-    sigRef =db.doc(`days/${S.id}/sig/signatures`);
-    logRef =db.doc(`days/${S.id}/log/changes`);
-    shotRef=db.doc(`days/${S.id}/shot/sketch`);
-    try{
-      const [d,g,l,p]=await Promise.all([dayRef.get(),sigRef.get(),logRef.get(),shotRef.get()]);
-      suppress=true;
-      if(d.exists) Object.assign(S,d.data());
-      if(g.exists){ const {sketch,...sg}=g.data(); S.sigs={...S.sigs,...sg}; S.sketch=sketch||""; }
-      if(l.exists) S.changes=l.data().items||[];
-      if(p.exists) S.sketchPhoto=p.data().photo||"";
-      if(!S.samples.length) S.samples=[blankSample()];
-      suppress=false;
-      setPill("synced"); render();
-    }catch(e){ setPill("local"); }
-    dayRef.onSnapshot(s=>{
-      if(!s.exists||s.metadata.hasPendingWrites) return;
-      suppress=true; Object.assign(S,s.data()); suppress=false;
-      setPill("synced"); render();
-    },()=>setPill("local"));
+    db.collection("index").onSnapshot(q=>{
+      remoteIdx=new Map(q.docs.filter(x=>x.exists).map(x=>[x.id,x.data()]));
+      if(active==="docs") render();
+    },()=>{});
+    await attachRemote();
   } else setPill("local");
 })();
 </script>
