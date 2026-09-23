@@ -175,33 +175,22 @@ tr.hot{background:var(--warn-soft)}
 .docrow .dm{grid-column:1; font-size:12px; color:var(--muted)}
 .docrow .tags{grid-column:2; grid-row:1 / 3; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end}
 
-/* ---------- print — mirrors forms 57 and 33.1 ---------- */
-.printonly{display:none}
-@media print{
-  @page{size:A4 landscape; margin:8mm}
-  body{background:#fff; color:#000; font-size:8.5pt}
-  .top,main{display:none!important}
-  .printonly{display:block}
-  .psheet{page-break-after:always}
-  .psheet:last-child{page-break-after:auto}
-  .phead{display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:3px; margin-bottom:5px}
-  .ptitle{font-family:"Frank Ruhl Libre",serif; font-size:14pt; font-weight:700}
-  .pform{font-size:7.5pt; text-align:left; line-height:1.4}
-  /* the on-screen rule table{min-width:max-content} would push these past the
-     page edge and clip the cells — printed tables must fit the sheet instead */
-  table{min-width:0!important}
-  table.ph{width:100%; border-collapse:collapse; font-size:7.5pt; margin-bottom:6px; table-layout:fixed}
-  table.ph td{border:.5pt solid #000; padding:2px 4px; overflow-wrap:break-word}
-  table.ph td.k{background:#f2f2f2; width:9%}
-  table.p{width:100%; border-collapse:collapse; font-size:7.5pt; table-layout:fixed}
-  table.p th,table.p td{border:.5pt solid #000; padding:2px 3px; text-align:right; overflow-wrap:break-word}
-  table.p th{background:#eee; font-weight:600; font-size:7pt}
-  .pdecl{font-size:6.4pt; line-height:1.35; margin-top:5px; color:#222}
-  .psig{display:flex; gap:12px; margin-top:7px; font-size:7.5pt}
-  .psig div{flex:1; border:.5pt solid #000; padding:3px 4px; min-height:38px}
-  .psig img{max-height:30px; display:block}
-  .pshot{max-height:60mm; margin-top:4px}
-}
+/* ---------- number fields — type=number opens the numeric keyboard on iPad ---------- */
+input[type=number]{-moz-appearance:textfield; appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none; margin:0}
+
+/* ---------- field log — fits an iPad in landscape without sideways scrolling ---------- */
+table.compact{table-layout:fixed; min-width:820px}
+table.compact th{white-space:normal; padding:6px 3px; font-size:11px; line-height:1.2; letter-spacing:0; vertical-align:bottom}
+table.compact td{padding:2px 2px}
+table.compact td input,table.compact td select{padding:6px 3px; font-size:13px; min-height:38px}
+table.compact td select{-webkit-appearance:none; appearance:none; text-overflow:ellipsis}
+table.compact td.rownum,table.compact .tickcell{width:auto}
+
+/* ---------- file dialog ---------- */
+.modal{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; padding:16px}
+.modal .card{width:100%; max-width:440px}
+.modal .bar a.btn{text-decoration:none; display:inline-flex; align-items:center}
 </style>
 </head>
 <body>
@@ -232,8 +221,6 @@ tr.hot{background:var(--warn-soft)}
   <section id="v-hist" role="tabpanel" hidden></section>
 </main>
 
-<div class="printonly" id="printArea"></div>
-
 <script>
 "use strict";
 
@@ -260,6 +247,7 @@ const DAYS     = ["A","B","C","D","E","F","G"];
 const TESTS    = ["TPH DRO ORO","VOC","ICP","SVOC","PFAS"];
 const EXTRA_N  = 3;
 const PID_HOT  = 20;
+const BILL_US  = "וזה אקולוגיה";
 
 const todayISO = () => new Date().toISOString().slice(0,10);
 const nowHM    = () => new Date().toTimeString().slice(0,5);
@@ -274,7 +262,7 @@ function blankSample(boring){
   return {id:crypto.randomUUID(), boring:boring||"", depth:"", time:"", name:"", nameAuto:true,
     dayLetter:"", soil:[], color:[], odour:"", moist:"", pid:"", pid20:"", note:"",
     toCoc:false, tool:"", packs:"", stype:"", tests:[], extra:[], cocNote:"", qc:"",
-    toSplit:false, sp:{tool:"", packs:"", stype:"", tests:[], extra:[], note:""}};
+    toSplit:false, sp:{tool:"", packs:"", stype:"", tests:[], extra:[], note:""}, auto:[]};
 }
 
 const newId = () => `day-${todayISO()}-${crypto.randomUUID().slice(0,8)}`;
@@ -315,7 +303,8 @@ let S = blankDay();
 let db=null, unsubDay=null, saveT=null, suppress=false, flash=null;
 
 /* ============ change log ============
-   נרשם רק אחרי שהשדה נבחר והשינוי התייצב — לא תוך כדי הבחירה.
+   נרשם רק שינוי של ערך קיים, אחרי שהתייצב. הזנה ראשונה לשדה ריק אינה שינוי —
+   כך גם נגיעה בשדה שעת/תאריך, שבאייפד ממלאת ערך מעצמה, לא נרשמת.
    מבצע השינוי הוא תמיד דוגם 1. */
 const COMMIT_MS = 3000;
 const pendingChg = new Map();
@@ -325,7 +314,7 @@ function commitChange(key){
   pendingChg.delete(key);
   if(!rec) return false;
   clearTimeout(rec.timer);
-  if(String(rec.from) === String(rec.to)) return false;
+  if(rec.from === "" || String(rec.from) === String(rec.to)) return false;
   S.changes.push({t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label:rec.label,
                   from:String(rec.from), to:String(rec.to)});
   return true;
@@ -348,7 +337,9 @@ function logChange(label, from, to, key){
 function setHead(k,v,label){ logChange(label,S.head[k],v,"head."+k); S.head[k]=v; save(); }
 function setSub(obj,k,v,label,key){ logChange(label,obj[k],v,key||label); obj[k]=v; save(); }
 function setSample(sm,k,v,label){
-  logChange(`${label} · ${sm.name||"דגימה חדשה"}`, sm[k], v, sm.id+"."+k);
+  /* ערך שהועתק לשורה חדשה אינו הזנה של הדוגם — הבחירה הראשונה בו אינה שינוי */
+  if(sm.auto.includes(k)) sm.auto=sm.auto.filter(x=>x!==k);
+  else logChange(`${label} · ${sm.name||"דגימה חדשה"}`, sm[k], v, sm.id+"."+k);
   sm[k]=v;
   if((k==="boring"||k==="depth") && sm.nameAuto) sm.name = autoName(sm);
   save();
@@ -531,7 +522,8 @@ const el=(t,a={},...kids)=>{
 const RO = () => S.locked;
 const field=(label,node,hint)=>el("div",{class:"f"},el("label",{},label),node,hint?el("span",{class:"hint"},hint):null);
 function txt(val,on,opts={}){
-  const i=el("input",{type:opts.type||"text", value:val||"", placeholder:opts.ph||"", inputmode:opts.im||null, disabled:RO()});
+  const i=el("input",{type:opts.type||"text", value:val||"", placeholder:opts.ph||"",
+    step:opts.type==="number"?"any":null, disabled:RO()});
   i.addEventListener("change",()=>on(i.value));
   return i;
 }
@@ -569,11 +561,11 @@ function pad(key,label,store){
     ctx.lineWidth=2.1; ctx.lineCap="round"; ctx.lineJoin="round";
     ctx.strokeStyle=getComputedStyle(document.body).color;
     if(store[key]){ const im=new Image(); im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height); im.src=store[key]; }
-    let drawing=false;
+    let drawing=false, drew=false;
     const pt=e=>{const b=c.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
-    c.addEventListener("pointerdown",e=>{ if(RO())return; drawing=true; c.setPointerCapture(e.pointerId); const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
-    c.addEventListener("pointermove",e=>{ if(!drawing)return; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
-    const end=()=>{ if(!drawing)return; drawing=false;
+    c.addEventListener("pointerdown",e=>{ if(RO())return; drawing=true; drew=false; c.setPointerCapture(e.pointerId); const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
+    c.addEventListener("pointermove",e=>{ if(!drawing)return; drew=true; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
+    const end=()=>{ if(!drawing)return; drawing=false; if(!drew) return;
       const had=!!store[key]; store[key]=c.toDataURL("image/png");
       logChange(`חתימה — ${label}`, had?"חתום":"", "נחתם", "sig."+key); save(); };
     c.addEventListener("pointerup",end); c.addEventListener("pointercancel",end);
@@ -596,7 +588,11 @@ function viewDay(){
       field("לקוח", txt(h.client,x=>setHead("client",x,"לקוח"))),
       field("נציג הלקוח", txt(h.clientRep,x=>setHead("clientRep",x,"נציג הלקוח"))),
       field("איש קשר", txt(h.contact,x=>setHead("contact",x,"איש קשר"))),
-      field("לחייב", txt(h.billTo,x=>setHead("billTo",x,"לחייב"))))));
+      el("div",{class:"f"},el("label",{},"לחייב"),
+        txt(h.billTo,x=>setHead("billTo",x,"לחייב"),{ph:"מילוי חופשי"}),
+        el("div",{class:"chips"},
+          el("button",{class:"chip",type:"button","aria-pressed":String(h.billTo===BILL_US),disabled:RO(),
+            onclick:()=>setHead("billTo",h.billTo===BILL_US?"":BILL_US,"לחייב")},BILL_US))))));
 
   v.append(el("div",{class:"card"},
     el("h2",{},"צוות וציוד"),
@@ -605,7 +601,7 @@ function viewDay(){
       field("דוגם 2", sel(h.s2,SAMPLERS,x=>setHead("s2",x,"דוגם 2"))),
       field("מאשר הדו״ח", sel(h.approver,SAMPLERS,x=>setHead("approver",x,"מאשר הדו״ח"))),
       field("מכשיר PID", sel(h.pid,PIDS,x=>setHead("pid",x,"מכשיר PID"))),
-      field("PID באוויר הפתוח", txt(h.pidOpen,x=>setHead("pidOpen",x,"PID באוויר הפתוח"),{im:"decimal",ph:"ppm"})),
+      field("PID באוויר הפתוח", txt(h.pidOpen,x=>setHead("pidOpen",x,"PID באוויר הפתוח"),{type:"number",ph:"ppm"})),
       field("כלי קידוח", sel(h.rig,RIGS.concat(["אחר"]),x=>setHead("rig",x,"כלי קידוח"))),
       h.rig==="אחר" ? field("פירוט כלי הקידוח", txt(h.rigOther,x=>setHead("rigOther",x,"פירוט כלי קידוח"),{ph:"מילוי חופשי"})) : null),
     el("div",{class:"grid wide",style:"margin-top:16px"},
@@ -617,9 +613,9 @@ function viewDay(){
     el("div",{class:"sub"},"שעת הסיום וטמפ׳ סוף היום נרשמות בתחתית יומן השדה, בסיום העבודה"),
     el("div",{class:"grid"},
       field("שעת הגעה", txt(h.arrive,x=>setHead("arrive",x,"שעת הגעה"),{type:"time"})),
-      field("טמפ׳ תחילת יום", txt(h.tStart,x=>setHead("tStart",x,"טמפ׳ תחילה"),{im:"decimal",ph:"°C"})),
+      field("טמפ׳ תחילת יום", txt(h.tStart,x=>setHead("tStart",x,"טמפ׳ תחילה"),{type:"number",ph:"°C"})),
       field("ייעוד קרקע", sel(h.landuse,LANDUSE,x=>setHead("landuse",x,"ייעוד קרקע")),"לא חובה — ריק מודפס כ־־"),
-      field("מפלס מי תהום", txt(h.gwl,x=>setHead("gwl",x,"מפלס מי תהום"),{im:"decimal",ph:"מ׳"}),"לא חובה")),
+      field("מפלס מי תהום", txt(h.gwl,x=>setHead("gwl",x,"מפלס מי תהום"),{type:"number",ph:"מ׳"}),"לא חובה")),
     el("div",{class:"f",style:"margin-top:16px"},el("label",{},"מזג אוויר · בחירה מרובה"),
       multi(h.weather,WEATHER,x=>setHead("weather",x,"מזג אוויר"))),
     el("div",{class:"f",style:"margin-top:16px"},el("label",{},"סימונים"),
@@ -682,11 +678,11 @@ function sketchCard(){
     const ctx=c.getContext("2d"); ctx.scale(dpr,dpr);
     ctx.lineWidth=2.2; ctx.lineCap="round"; ctx.strokeStyle=getComputedStyle(document.body).color;
     if(S.sketch){ const im=new Image(); im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height); im.src=S.sketch; }
-    let d=false;
+    let d=false, drew=false;
     const pt=e=>{const b=c.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
-    c.addEventListener("pointerdown",e=>{ if(RO())return; d=true; c.setPointerCapture(e.pointerId); const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
-    c.addEventListener("pointermove",e=>{ if(!d)return; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
-    const end=()=>{ if(!d)return; d=false; S.sketch=c.toDataURL("image/png"); save(); };
+    c.addEventListener("pointerdown",e=>{ if(RO())return; d=true; drew=false; c.setPointerCapture(e.pointerId); const[x,y]=pt(e); ctx.beginPath(); ctx.moveTo(x,y); });
+    c.addEventListener("pointermove",e=>{ if(!d)return; drew=true; const[x,y]=pt(e); ctx.lineTo(x,y); ctx.stroke(); });
+    const end=()=>{ if(!d)return; d=false; if(!drew) return; S.sketch=c.toDataURL("image/png"); save(); };
     c.addEventListener("pointerup",end); c.addEventListener("pointercancel",end);
   });
   return card;
@@ -699,17 +695,17 @@ function viewLog(){
     const hot=parseFloat(sm.pid)>=PID_HOT;
     tb.append(el("tr",{class:hot?"hot":""},
       el("td",{class:"rownum"},String(i+1)),
-      el("td",{class:"mono w-m"}, txt(sm.boring,x=>setSample(sm,"boring",x,"מס׳ קידוח"),{ph:"ק1"})),
-      el("td",{class:"mono w-s"}, txt(sm.depth,x=>setSample(sm,"depth",x,"עומק"),{im:"decimal",ph:"מ׳"})),
-      el("td",{class:"mono w-m"}, txt(sm.name,x=>{sm.nameAuto=false; setSample(sm,"name",x,"שם דגימה");})),
-      el("td",{class:"mono w-s"}, txt(sm.time,x=>setSample(sm,"time",x,"שעה"),{type:"time"})),
-      el("td",{class:"w-l"}, sel(sm.soil[0]||"",SOIL,x=>setSample(sm,"soil",x?[x]:[],"סוג קרקע"))),
-      el("td",{class:"w-m"}, sel(sm.color[0]||"",COLOR,x=>setSample(sm,"color",x?[x]:[],"צבע"))),
-      el("td",{class:"w-s"}, sel(sm.odour,ODOUR,x=>setSample(sm,"odour",x,"ריח"))),
-      el("td",{class:"w-s"}, sel(sm.moist,MOIST,x=>setSample(sm,"moist",x,"לחות"))),
-      el("td",{class:"mono w-s"}, txt(sm.pid,x=>setSample(sm,"pid",x,"PID"),{im:"decimal"})),
-      el("td",{class:"mono w-s"}, txt(sm.pid20,x=>setSample(sm,"pid20",x,"PID 20%"),{im:"decimal"})),
-      el("td",{class:"w-xl"}, txt(sm.note,x=>setSample(sm,"note",x,"הערות"))),
+      el("td",{class:"mono"}, txt(sm.boring,x=>setSample(sm,"boring",x,"מס׳ קידוח"),{ph:"ק1"})),
+      el("td",{class:"mono"}, txt(sm.depth,x=>setSample(sm,"depth",x,"עומק"),{type:"number",ph:"מ׳"})),
+      el("td",{class:"mono"}, txt(sm.name,x=>{sm.nameAuto=false; setSample(sm,"name",x,"שם דגימה");})),
+      el("td",{class:"mono"}, txt(sm.time,x=>setSample(sm,"time",x,"שעה"),{type:"time"})),
+      el("td",{}, sel(sm.soil[0]||"",SOIL,x=>setSample(sm,"soil",x?[x]:[],"סוג קרקע"))),
+      el("td",{}, sel(sm.color[0]||"",COLOR,x=>setSample(sm,"color",x?[x]:[],"צבע"))),
+      el("td",{}, sel(sm.odour,ODOUR,x=>setSample(sm,"odour",x,"ריח"))),
+      el("td",{}, sel(sm.moist,MOIST,x=>setSample(sm,"moist",x,"לחות"))),
+      el("td",{class:"mono"}, txt(sm.pid,x=>setSample(sm,"pid",x,"PID"),{type:"number"})),
+      el("td",{class:"mono"}, txt(sm.pid20,x=>setSample(sm,"pid20",x,"PID 20%"),{type:"number"})),
+      el("td",{}, txt(sm.note,x=>setSample(sm,"note",x,"הערות"))),
       el("td",{class:"tickcell"}, el("button",{class:"tick",type:"button",disabled:RO(),
         "aria-pressed":String(sm.toCoc),title:"העבר למשמורת",
         onclick:()=>setSample(sm,"toCoc",!sm.toCoc,"סימון למשמורת")},"✓")),
@@ -720,17 +716,23 @@ function viewLog(){
 
   v.append(el("div",{class:"card"},
     el("h2",{},"יומן שדה"),
-    el("div",{class:"sub"},"טופס 57 · שם הדגימה נבנה ממס׳ הקידוח והעומק וניתן לדרוס אותו. שורה חדשה יורשת את מס׳ הקידוח מהשורה שמעליה"),
+    el("div",{class:"sub"},"טופס 57 · שם הדגימה נבנה ממס׳ הקידוח והעומק וניתן לדרוס אותו. שורה חדשה יורשת את מס׳ הקידוח וסוג הקרקע מהשורה שמעליה"),
     el("div",{class:"scroll"},
-      el("table",{},el("thead",{},el("tr",{},
+      /* רוחב קבוע לכל עמודה; ההערות מקבלות את מה שנשאר */
+      el("table",{class:"compact"},
+        el("colgroup",{},[26,58,54,78,70,86,64,52,56,50,50,null,44,44]
+          .map(w=>el("col",{style:w?`width:${w}px`:null}))),
+        el("thead",{},el("tr",{},
         el("th",{},"#"),el("th",{},"מס׳ קידוח"),el("th",{},"עומק"),el("th",{},"שם דגימה"),
         el("th",{},"שעה"),el("th",{},"סוג קרקע"),el("th",{},"צבע"),el("th",{},"ריח"),
         el("th",{},"לחות"),el("th",{},"PID"),el("th",{},"PID 20%"),el("th",{},"הערות"),
-        el("th",{class:"vt"},"משמורת"),el("th",{class:"vt"},"משמורת פיצול"))),tb)),
+        el("th",{},"משמורת"),el("th",{},"פיצול"))),tb)),
     el("div",{class:"bar"},
       el("button",{class:"btn",disabled:RO(),onclick:()=>{
         const prev=S.samples[S.samples.length-1];
         const sm=blankSample(prev?prev.boring:""); sm.time=nowHM();
+        if(prev) sm.soil=[...prev.soil];
+        sm.auto=["boring","time","soil"].filter(k=>String(sm[k])!=="");
         if(sm.boring) sm.name=autoName(sm);
         S.samples.push(sm); logChange("הוספת דגימה","",`שורה ${S.samples.length}`,"add."+sm.id); save();
       }},"הוסף דגימה"),
@@ -755,7 +757,7 @@ function viewLog(){
     el("div",{class:"sub"},"למלא בתום הדיגום"),
     el("div",{class:"grid"},
       field("שעת סיום", txt(S.head.finish,x=>setHead("finish",x,"שעת סיום"),{type:"time"})),
-      field("טמפ׳ סוף יום", txt(S.head.tEnd,x=>setHead("tEnd",x,"טמפ׳ סיום"),{im:"decimal",ph:"°C"})))));
+      field("טמפ׳ סוף יום", txt(S.head.tEnd,x=>setHead("tEnd",x,"טמפ׳ סיום"),{type:"number",ph:"°C"})))));
   return v;
 }
 
@@ -811,7 +813,7 @@ function custodyView(kind){
       el("span",{class:"pill"},`${rows.length} דגימות`),
       el("span",{class:"pill"},`${rows.reduce((a,s)=>a+(isSplit?s.sp.tests.length:s.tests.length),0)} אנליזות`),
       el("span",{class:"spacer"}),
-      el("button",{class:"btn ghost",onclick:()=>printSheet(isSplit?"split":"coc")},
+      el("button",{class:"btn ghost",onclick:()=>makePdf(isSplit?"split":"coc")},
         isSplit?"PDF משמורת פיצול":"PDF שרשרת משמורת"))));
 
   v.append(el("div",{class:"card"},
@@ -836,6 +838,17 @@ function custodyView(kind){
 }
 
 /* ============ handover ============ */
+/* סיום האחסון הוא ברירת המחדל למסירה ולקבלה במעבדה. שדה שמולא ידנית בערך אחר אינו נדרס */
+const HAND_FROM_STORAGE={
+  toD:[["byDate","תאריך מסירה"],["labDate","תאריך קבלה"]],
+  toT:[["byTime","שעת מסירה"],["labTime","שעת קבלה"]]};
+function storageEnd(k,v){
+  const st=S.storage, ho=S.handover, old=st[k];
+  setSub(st,k,v,k==="toD"?"סיום אחסון":"שעת סיום אחסון","st."+k);
+  for(const [f,label] of HAND_FROM_STORAGE[k])
+    if(!ho[f] || ho[f]===old) setSub(ho,f,v,label,"ho."+f);
+}
+
 function viewHand(){
   const v=el("div",{}), ho=S.handover, st=S.storage;
 
@@ -860,8 +873,8 @@ function viewHand(){
       field("האחראי", txt(st.keeper,x=>setSub(st,"keeper",x,"אחראי אחסון","st.keeper"))),
       field("תחילת אחסון — תאריך", txt(st.fromD,x=>setSub(st,"fromD",x,"תחילת אחסון","st.fromD"),{type:"date"})),
       field("תחילת אחסון — שעה", txt(st.fromT,x=>setSub(st,"fromT",x,"שעת תחילת אחסון","st.fromT"),{type:"time"})),
-      field("סיום אחסון — תאריך", txt(st.toD,x=>setSub(st,"toD",x,"סיום אחסון","st.toD"),{type:"date"})),
-      field("סיום אחסון — שעה", txt(st.toT,x=>setSub(st,"toT",x,"שעת סיום אחסון","st.toT"),{type:"time"})),
+      field("סיום אחסון — תאריך", txt(st.toD,x=>storageEnd("toD",x),{type:"date"}),"ברירת המחדל לתאריך המסירה והקבלה"),
+      field("סיום אחסון — שעה", txt(st.toT,x=>storageEnd("toT",x),{type:"time"}),"ברירת המחדל לשעת המסירה והקבלה"),
       field("טמפרטורה 4±2°C", sel(st.tempOk,["תקין","לא תקין"],x=>setSub(st,"tempOk",x,"תקינות טמפרטורה","st.tempOk")))),
     st.tempOk==="לא תקין"?el("div",{class:"note bad",style:"margin-top:14px"},
       el("b",{},"נדרש טופס חריגים. "),"יש לתעד את החריגה גם בהערות המשמורת — סעיף 8."):null));
@@ -899,11 +912,11 @@ function viewHand(){
 
   v.append(el("div",{class:"card"},
     el("h2",{},"הפקת קבצים"),
-    el("div",{class:"sub"},"כל קובץ נפתח בתצוגת הדפסה. באייפד: שיתוף ← הדפסה ← שמירה כ-PDF, ואז שליחה במייל"),
+    el("div",{class:"sub"},"קובץ ה-PDF נוצר ישירות באפליקציה. אחרי היצירה: שיתוף (שמירה בקבצים, מייל) או הורדה"),
     el("div",{class:"bar",style:"margin-top:0"},
-      el("button",{class:"btn ghost",onclick:()=>printSheet("log")},"PDF יומן שדה"),
-      el("button",{class:"btn ghost",onclick:()=>printSheet("coc")},"PDF שרשרת משמורת"),
-      el("button",{class:"btn ghost",onclick:()=>printSheet("split")},"PDF משמורת פיצול")),
+      el("button",{class:"btn ghost",onclick:()=>makePdf("log")},"PDF יומן שדה"),
+      el("button",{class:"btn ghost",onclick:()=>makePdf("coc")},"PDF שרשרת משמורת"),
+      el("button",{class:"btn ghost",onclick:()=>makePdf("split")},"PDF משמורת פיצול")),
     el("div",{class:"note",style:"margin-top:14px"},
       "שמות הקבצים: ",el("span",{class:"mono"},`${fileName("log")}`),
       " · ",el("span",{class:"mono"},`${fileName("coc")}`),
@@ -916,7 +929,7 @@ function viewHist(){
   const items=[...S.changes].reverse();
   return el("div",{},el("div",{class:"card"},
     el("h2",{},"תיעוד שינויים"),
-    el("div",{class:"sub"},"נרשם רק אחרי שהשינוי התייצב, לא תוך כדי הבחירה. מבצע השינוי הוא דוגם 1. אינו ניתן למחיקה"),
+    el("div",{class:"sub"},"נרשם רק שינוי של ערך קיים, אחרי שהשינוי התייצב. הזנה ראשונה לשדה ריק, או נגיעה בשדה בלי לשנות אותו, אינן נרשמות. מבצע השינוי הוא דוגם 1. אינו ניתן למחיקה"),
     items.length?el("ul",{class:"hist"},items.map(c=>el("li",{},
       el("span",{class:"what"},c.label),
       el("span",{class:"when"},new Date(c.t).toLocaleString("he-IL")),
@@ -932,110 +945,270 @@ function viewHist(){
       el("button",{class:"btn ghost",onclick:exportJson},"ייצוא נתונים"))));
 }
 
-/* ============ print ============ */
+/* ============ PDF ============
+   window.print() אינו עושה דבר בתצוגת HTML שבתוך אפליקציה (Documents by Readdle ודומות),
+   ולכן הטפסים מצוירים על canvas ונארזים לקובץ PDF כאן, בלי תלות בדיאלוג ההדפסה. */
 const KIND_NAME={log:"יומן שדה", coc:"שרשרת משמורת", split:"שרשרת משמורת פיצול"};
 function fileName(kind){
   const site=(S.head.site||"אתר").trim().replace(/[\\/:*?"<>|]/g,"-");
   return `${KIND_NAME[kind]} ${site} ${ddmmyy(S.head.date)}`.trim();
 }
-const pv = x => (x===""||x==null||(Array.isArray(x)&&!x.length)) ? "־" : (Array.isArray(x)?x.join(", "):x);
+const pv = x => (x===""||x==null||(Array.isArray(x)&&!x.length)) ? "־" : (Array.isArray(x)?x.join(", "):String(x));
 
-function headTable(pairs){
-  const t=el("table",{class:"ph"});
-  const per=4; let tr=null;
-  pairs.forEach(([k,val],i)=>{
-    if(i%per===0){ tr=el("tr",{}); t.append(tr); }
-    tr.append(el("td",{class:"k"},k), el("td",{},pv(val)));
-  });
-  return t;
-}
-function sigBox(label,img){ return el("div",{},label,el("br",{}),img?el("img",{src:img}):""); }
-
-function sheetLog(){
+/* תוכן הטפסים 57 ו-33.1 — עמודה היא [כותרת, רוחב יחסי] */
+function sheetSpec(kind){
   const h=S.head;
-  const rig = h.rig==="אחר" ? (h.rigOther||"־") : h.rig;
-  return el("div",{class:"psheet"},
-    el("div",{class:"phead"},el("div",{class:"ptitle"},"יומן שדה"),
-      el("div",{class:"pform"},"טופס 57",el("br",{}),"וזה אקולוגיה בע״מ")),
-    headTable([["אתר",h.site],["כתובת",h.address],["תאריך",h.date],["אות היום",h.dayLetter],
-      ["כלי קידוח",rig],["דוגם 1",h.s1],["דוגם 2",h.s2],["לקוח",h.client],
-      ["נציג הלקוח",h.clientRep],["PID",h.pid],["PID באוויר פתוח",h.pidOpen],["מזג אוויר",h.weather],
-      ["שעת הגעה",h.arrive],["שעת סיום",h.finish],["טמפ׳ תחילה",h.tStart],["טמפ׳ סיום",h.tEnd],
-      ["מוכנות 55,56",h.ready5556?"בוצע":"־"],["אחסון בקירור",h.cooled?"כן":"לא"],
-      ["ייעוד קרקע",h.landuse],["מפלס מי תהום",h.gwl]]),
-    el("table",{class:"p"},el("thead",{},el("tr",{},
-      ["#","מס׳ קידוח","שם דגימה","עומק","שעה","סוג קרקע","צבע","ריח","לחות","PID","PID 20%","משמורת","פיצול","הערות"]
-        .map(t=>el("th",{},t)))),
-      el("tbody",{},S.samples.map((s,i)=>el("tr",{},
-        el("td",{},String(i+1)),el("td",{},pv(s.boring)),el("td",{},pv(s.name)),el("td",{},pv(s.depth)),
-        el("td",{},pv(s.time)),el("td",{},pv(s.soil)),el("td",{},pv(s.color)),el("td",{},pv(s.odour)),
-        el("td",{},pv(s.moist)),el("td",{},pv(s.pid)),el("td",{},pv(s.pid20)),
-        el("td",{style:"text-align:center"},s.toCoc?"✓":""),
-        el("td",{style:"text-align:center"},s.toSplit?"✓":""),
-        el("td",{},pv(s.note)))))),
-    S.deviations.length?el("div",{class:"pdecl"},"חריגות ותוספות: "+
-      S.deviations.map(d=>`${d.what} — ${d.why} — אישר: ${d.who}`).join(" | ")):null,
-    S.sketchPhoto?el("img",{class:"pshot",src:S.sketchPhoto}):(S.sketch?el("img",{class:"pshot",src:S.sketch}):null),
-    el("div",{class:"psig"},sigBox("חתימת דוגם 1: "+pv(h.s1),S.sigs.s1),sigBox("חתימת דוגם 2: "+pv(h.s2),S.sigs.s2)));
-}
-
-function sheetCustody(isSplit){
-  const h=S.head, rows=isSplit?splitRows():cocRows(), tests=allTests();
-  const lab=isSplit?h.labSplit:h.lab;
-  return el("div",{class:"psheet"},
-    el("div",{class:"phead"},
-      el("div",{class:"ptitle"},isSplit?"טופס משמורת לדיגום קרקע — פיצול":"טופס משמורת לדיגום קרקע ודרישת בדיקות"),
-      el("div",{class:"pform"},"טופס 33.1",el("br",{}),"וזה אקולוגיה בע״מ",
-        h.accredited?el("br",{}):null, h.accredited?"הרשות הלאומית להסמכת מעבדות · 294":null)),
-    headTable([["אתר",h.site],["כתובת",h.address],["תאריך",h.date],[isSplit?"מעבדה משנית":"מעבדה",lab],
+  if(kind==="log"){
+    const rig = h.rig==="אחר" ? (h.rigOther||"") : h.rig;
+    return {
+      title:"יומן שדה", form:["טופס 57","וזה אקולוגיה בע״מ"],
+      head:[["אתר",h.site],["כתובת",h.address],["תאריך",h.date],["אות היום",h.dayLetter],
+        ["כלי קידוח",rig],["דוגם 1",h.s1],["דוגם 2",h.s2],["לקוח",h.client],
+        ["נציג הלקוח",h.clientRep],["PID",h.pid],["PID באוויר פתוח",h.pidOpen],["מזג אוויר",h.weather],
+        ["שעת הגעה",h.arrive],["שעת סיום",h.finish],["טמפ׳ תחילה",h.tStart],["טמפ׳ סיום",h.tEnd],
+        ["מוכנות 55,56",h.ready5556?"בוצע":""],["אחסון בקירור",h.cooled?"כן":"לא"],
+        ["ייעוד קרקע",h.landuse],["מפלס מי תהום",h.gwl]],
+      cols:[["#",.45],["מס׳ קידוח",1],["שם דגימה",1.2],["עומק",.75],["שעה",.75],["סוג קרקע",1.1],["צבע",.9],
+        ["ריח",.7],["לחות",.7],["PID",.7],["PID 20%",.75],["משמורת",.8],["פיצול",.65],["הערות",2.6]],
+      center:new Set([0,11,12]),
+      rows:S.samples.map((s,i)=>[String(i+1),pv(s.boring),pv(s.name),pv(s.depth),pv(s.time),pv(s.soil),pv(s.color),
+        pv(s.odour),pv(s.moist),pv(s.pid),pv(s.pid20),s.toCoc?"✓":"",s.toSplit?"✓":"",pv(s.note)]),
+      notes:S.deviations.length?["חריגות ותוספות: "+S.deviations.map(d=>`${d.what} — ${d.why} — אישר: ${d.who}`).join(" | ")]:[],
+      image:S.sketchPhoto?{src:S.sketchPhoto}:(S.sketch?{src:S.sketch,ink:true}:null),
+      sigs:[["חתימת דוגם 1: "+pv(h.s1),S.sigs.s1],["חתימת דוגם 2: "+pv(h.s2),S.sigs.s2]]
+    };
+  }
+  const isSplit=kind==="split", rows=isSplit?splitRows():cocRows(), tests=allTests(), st=S.storage, ho=S.handover;
+  return {
+    title:isSplit?"טופס משמורת לדיגום קרקע — פיצול":"טופס משמורת לדיגום קרקע ודרישת בדיקות",
+    form:["טופס 33.1","וזה אקולוגיה בע״מ"].concat(h.accredited?["הרשות הלאומית להסמכת מעבדות · 294"]:[]),
+    head:[["אתר",h.site],["כתובת",h.address],["תאריך",h.date],[isSplit?"מעבדה משנית":"מעבדה",isSplit?h.labSplit:h.lab],
       ["לחייב",h.billTo],["מזג אוויר",h.weather],["ייעוד הקרקע",h.landuse],["מפלס מי תהום",h.gwl],
-      ["PID",h.pid],["שם הדוגם",h.s1],["מאשר הדו״ח",h.approver],["לקוח",h.client],["איש קשר",h.contact]]),
-    el("table",{class:"p"},el("thead",{},el("tr",{},
-      ["#","אות יום","זיהוי דגימה","עומק","שעת דיגום","כלי דיגום","אריזות","סוג",...tests,"PID"]
-        .concat(isSplit?[]:["בקרה"]).concat(["הערות"]).map(t=>el("th",{},t)))),
-      el("tbody",{},rows.map((s,i)=>{
-        const bag=isSplit?s.sp:s;
-        return el("tr",{},
-          el("td",{},String(i+1)),el("td",{},pv(s.dayLetter||h.dayLetter)),el("td",{},pv(s.name)),
-          el("td",{},pv(s.depth)),el("td",{},pv(s.time)),el("td",{},pv(bag.tool)),
-          el("td",{},pv(bag.packs)),el("td",{},pv(bag.stype)),
-          ...tests.map(t=>el("td",{style:"text-align:center"},bag.tests.includes(t)?"✓":"")),
-          el("td",{},pv(s.pid)),
-          isSplit?null:el("td",{},pv(s.qc)),
-          el("td",{},pv(isSplit?bag.note:s.cocNote)));
-      }))),
-    el("div",{class:"pdecl"},
-      h.accredited
+      ["PID",h.pid],["שם הדוגם",h.s1],["מאשר הדו״ח",h.approver],["לקוח",h.client],["איש קשר",h.contact]],
+    cols:[["#",.45],["אות יום",.55],["זיהוי דגימה",1.2],["עומק",.7],["שעת דיגום",.8],["כלי דיגום",.9],["אריזות",.65],["סוג",.7],
+      ...tests.map(t=>[t,.75]),["PID",.7],...(isSplit?[]:[["בקרה",.7]]),["הערות",2]],
+    center:new Set([0,1,...tests.map((_,i)=>8+i)]),
+    rows:rows.map((s,i)=>{
+      const bag=isSplit?s.sp:s;
+      return [String(i+1),pv(s.dayLetter||h.dayLetter),pv(s.name),pv(s.depth),pv(s.time),pv(bag.tool),pv(bag.packs),pv(bag.stype),
+        ...tests.map(t=>bag.tests.includes(t)?"✓":""),pv(s.pid),...(isSplit?[]:[pv(s.qc)]),pv(isSplit?bag.note:s.cocNote)];
+    }),
+    notes:[(h.accredited
         ? "הדיגומים הנכללים בדו״ח זה בוצעו בהתאם לדרישות ההסמכה של הרשות הלאומית להסמכת מעבדות ולפי דרישות התקן ISO/IEC 17025. הרשות אינה אחראית לתוצאות הדיגומים ואין ההסמכה מהווה אישור לאיכות הקרקע. יש להתייחס למסמך זה במלואו ואין להעתיק ממנו למסמכים אחרים. "
-        : "העבודה אינה בהסמכה. ",
-      "הצהרה: טופס זה מתייחס רק לפריטים שנדגמו. סוג דגימה: ח = חטף, מ = מורכב. כלי דיגום: צנצנת / ליינר. ",
-      `קידוח בקבלן משנה: ${h.subDrill?"כן":"לא"}. דיגום בקבלן משנה: ${h.subSample?"כן":"לא"}. `,
-      S.storage.place?`אחסון: ${S.storage.place}, אחראי ${S.storage.keeper}, ${S.storage.fromD} ${S.storage.fromT} עד ${S.storage.toD} ${S.storage.toT}, טמפרטורה ${S.storage.tempOk}. `:"",
-      "קריאת PID אינה נחשבת לבדיקה כמותית ואינה מחליפה אנליזה במעבדה."),
-    el("div",{class:"psig"},
-      sigBox(`נמסר ע״י ${pv(S.handover.byName)} · ${pv(S.handover.byDate)} ${pv(S.handover.byTime)}`,S.sigs.by),
-      sigBox(`התקבל במעבדה ע״י ${pv(S.handover.labName)} · ${pv(S.handover.labDate)} ${pv(S.handover.labTime)}`,S.sigs.lab)));
+        : "העבודה אינה בהסמכה. ")+
+      "הצהרה: טופס זה מתייחס רק לפריטים שנדגמו. סוג דגימה: ח = חטף, מ = מורכב. כלי דיגום: צנצנת / ליינר. "+
+      `קידוח בקבלן משנה: ${h.subDrill?"כן":"לא"}. דיגום בקבלן משנה: ${h.subSample?"כן":"לא"}. `+
+      (st.place?`אחסון: ${st.place}, אחראי ${st.keeper}, ${st.fromD} ${st.fromT} עד ${st.toD} ${st.toT}, טמפרטורה ${st.tempOk}. `:"")+
+      "קריאת PID אינה נחשבת לבדיקה כמותית ואינה מחליפה אנליזה במעבדה."],
+    image:null,
+    sigs:[[`נמסר ע״י ${pv(ho.byName)} · ${pv(ho.byDate)} ${pv(ho.byTime)}`,S.sigs.by],
+      [`התקבל במעבדה ע״י ${pv(ho.labName)} · ${pv(ho.labDate)} ${pv(ho.labTime)}`,S.sigs.lab]]
+  };
 }
 
-function printSheet(kind){
-  const area=document.getElementById("printArea");
-  area.textContent="";
-  area.append(kind==="log" ? sheetLog() : sheetCustody(kind==="split"));
-  const old=document.title;
-  document.title=fileName(kind);   /* הדפדפן משתמש בכותרת כשם קובץ ה-PDF */
-  const restore=()=>{ document.title=old; window.removeEventListener("afterprint",restore); };
-  window.addEventListener("afterprint",restore);
-  window.print();
-  setTimeout(restore,4000);
+/* A4 לרוחב בנקודות PDF; הציור ביחידות נקודה, ברזולוציה כפולה */
+const PW=842, PH=595, PM=22, PK=2, PFONT='Heebo,"Arial Hebrew",Arial,sans-serif';
+const setF=(g,size,bold)=>{ g.font=`${bold?700:400} ${size}px ${PFONT}`; };
+const loadImg=src=>new Promise(res=>{
+  if(!src) return res(null);
+  const i=new Image(); i.onload=()=>res(i); i.onerror=()=>res(null); i.src=src;
+});
+/* חתימה ושרטוט נשמרים בצבע הטקסט של המסך — במצב כהה זה בהיר, ועל דף לבן לא היה נראה */
+function inked(img){
+  const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight;
+  const g=c.getContext("2d"); g.drawImage(img,0,0);
+  g.globalCompositeOperation="source-in"; g.fillStyle="#000"; g.fillRect(0,0,c.width,c.height);
+  return c;
+}
+function pdfPage(){
+  const c=document.createElement("canvas"); c.width=PW*PK; c.height=PH*PK;
+  const g=c.getContext("2d"); g.scale(PK,PK);
+  g.fillStyle="#fff"; g.fillRect(0,0,PW,PH);
+  g.fillStyle="#000"; g.strokeStyle="#000"; g.lineWidth=.5;
+  g.direction="rtl"; g.textBaseline="top";
+  return {c,g,y:PM};
+}
+function wrapText(g,text,width){
+  const out=[];
+  for(const para of String(text).split("\n")){
+    let line="";
+    for(const w of para.split(/\s+/).filter(Boolean)){
+      const t=line?line+" "+w:w;
+      if(!line || g.measureText(t).width<=width) line=t; else { out.push(line); line=w; }
+    }
+    out.push(line);
+  }
+  return out;
+}
+function measureRow(g,cells,widths,size,bold){
+  setF(g,size,bold);
+  const lines=cells.map((t,i)=>wrapText(g,t,widths[i]-5)), lh=size*1.3;
+  return {lines,lh,size,bold,h:Math.max(...lines.map(l=>l.length))*lh+4};
+}
+function drawRow(pg,row,widths,opts={}){
+  const g=pg.g; let x=PW-PM;
+  setF(g,row.size,row.bold);
+  row.lines.forEach((ls,i)=>{
+    const w=widths[i]; x-=w;
+    if(opts.fill && (!opts.fillOnly || opts.fillOnly(i))){ g.fillStyle=opts.fill; g.fillRect(x,pg.y,w,row.h); g.fillStyle="#000"; }
+    g.strokeRect(x,pg.y,w,row.h);
+    g.save(); g.beginPath(); g.rect(x,pg.y,w,row.h); g.clip();
+    const mid=opts.center && opts.center.has(i);
+    g.textAlign=mid?"center":"right";
+    ls.forEach((t,j)=>g.fillText(t, mid?x+w/2:x+w-2.5, pg.y+2.5+j*row.lh));
+    g.restore();
+  });
+  pg.y+=row.h;
+}
+function drawTitle(pg,spec,first){
+  const g=pg.g;
+  setF(g,first?15:11,true); g.textAlign="right";
+  g.fillText(first?spec.title:`${spec.title} — המשך`, PW-PM, pg.y);
+  setF(g,7.5,false); g.textAlign="left";
+  spec.form.forEach((t,i)=>g.fillText(t, PM, pg.y+i*9.5));
+  pg.y+=Math.max(first?20:14, spec.form.length*9.5)+2;
+  g.lineWidth=1.2; g.beginPath(); g.moveTo(PM,pg.y); g.lineTo(PW-PM,pg.y); g.stroke(); g.lineWidth=.5;
+  pg.y+=6;
 }
 
-async function exportJson(){
-  const blob=JSON.stringify({...S,exportedAt:stamp()},null,2);
-  const fn=`${fileName("log")}.json`;
+async function renderSheet(spec){
+  const pages=[], W=PW-2*PM, bottom=PH-PM-12;
+  let pg;
+  const newPage=()=>{ pg=pdfPage(); pages.push(pg); drawTitle(pg,spec,pages.length===1); };
+  newPage();
+
+  const kw=W*.09, vw=W/4-kw, hw=[kw,vw,kw,vw,kw,vw,kw,vw];
+  for(let i=0;i<spec.head.length;i+=4){
+    const cells=[];
+    spec.head.slice(i,i+4).forEach(([k,v])=>cells.push(k,pv(v)));
+    while(cells.length<8) cells.push("");
+    drawRow(pg,measureRow(pg.g,cells,hw,7.5),hw,{fill:"#f2f2f2",fillOnly:j=>j%2===0});
+  }
+  pg.y+=6;
+
+  const tot=spec.cols.reduce((a,c)=>a+c[1],0), cw=spec.cols.map(c=>c[1]/tot*W);
+  const header=()=>drawRow(pg,measureRow(pg.g,spec.cols.map(c=>c[0]),cw,7,true),cw,{fill:"#e8e8e8",center:spec.center});
+  header();
+  for(const cells of spec.rows){
+    const r=measureRow(pg.g,cells,cw,7.5);
+    if(pg.y+r.h>bottom){ newPage(); header(); }
+    drawRow(pg,r,cw,{center:spec.center});
+  }
+  pg.y+=6;
+
+  for(const t of spec.notes){
+    const lh=6.6*1.4;
+    setF(pg.g,6.6,false);
+    for(const ln of wrapText(pg.g,t,W)){
+      if(pg.y+lh>bottom){ newPage(); setF(pg.g,6.6,false); }
+      pg.g.textAlign="right"; pg.g.fillText(ln,PW-PM,pg.y); pg.y+=lh;
+    }
+    pg.y+=4;
+  }
+
+  if(spec.image){
+    const im=await loadImg(spec.image.src);
+    if(im){
+      const src=spec.image.ink?inked(im):im, sw=src.width, sh=src.height;
+      const sc=Math.min(W*.5/sw, 170/sh), w=sw*sc, h=sh*sc;
+      if(pg.y+h+4>bottom) newPage();
+      pg.g.drawImage(src,PW-PM-w,pg.y,w,h); pg.g.strokeRect(PW-PM-w,pg.y,w,h);
+      pg.y+=h+8;
+    }
+  }
+
+  const boxH=50, gap=12, n=spec.sigs.length, bw=(W-gap*(n-1))/n;
+  if(pg.y+boxH>bottom) newPage();
+  for(let i=0;i<n;i++){
+    const [label,src]=spec.sigs[i], x=PW-PM-(i+1)*bw-i*gap, g=pg.g;
+    g.strokeRect(x,pg.y,bw,boxH);
+    g.save(); g.beginPath(); g.rect(x,pg.y,bw,boxH); g.clip();
+    setF(g,7.5,false); g.textAlign="right"; g.fillText(label,x+bw-4,pg.y+3);
+    const im=await loadImg(src);
+    if(im){
+      const ink=inked(im), sc=Math.min((bw-8)/ink.width,(boxH-17)/ink.height);
+      g.drawImage(ink,x+bw-4-ink.width*sc,pg.y+14,ink.width*sc,ink.height*sc);
+    }
+    g.restore();
+  }
+
+  pages.forEach((p,i)=>{
+    setF(p.g,7,false); p.g.textAlign="center";
+    p.g.fillText(`עמוד ${i+1} מתוך ${pages.length}`, PW/2, PH-PM+4);
+  });
+  return pages.map(p=>p.c);
+}
+
+async function canvasJpeg(c){
+  const b=await new Promise(r=>c.toBlob(r,"image/jpeg",.92));
+  return new Uint8Array(await b.arrayBuffer());
+}
+/* PDF מינימלי: עמוד לכל תמונה, התמונה (JPEG) ממלאת את הדף */
+function pdfFromJpegs(jpegs){
+  const enc=new TextEncoder(), parts=[], offs=[];
+  let len=0;
+  const put=x=>{ const b=typeof x==="string"?enc.encode(x):x; parts.push(b); len+=b.length; };
+  const obj=(num,body)=>{ offs[num]=len; put(`${num} 0 obj\n`); body(); put("\nendobj\n"); };
+  const n=jpegs.length, total=3+3*n;
+  put("%PDF-1.4\n%âãÏÓ\n");
+  obj(1,()=>put("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>put(`<< /Type /Pages /Count ${n} /Kids [${jpegs.map((_,i)=>`${3+3*i} 0 R`).join(" ")}] >>`));
+  jpegs.forEach((img,i)=>{
+    const p=3+3*i, cs=`q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q`;
+    obj(p,()=>put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${p+2} 0 R >> >> /Contents ${p+1} 0 R >>`));
+    obj(p+1,()=>put(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    obj(p+2,()=>{
+      put(`<< /Type /XObject /Subtype /Image /Width ${PW*PK} /Height ${PH*PK} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.length} >>\nstream\n`);
+      put(img); put("\nendstream");
+    });
+  });
+  const xref=len;
+  let x=`xref\n0 ${total}\n0000000000 65535 f \n`;
+  for(let i=1;i<total;i++) x+=String(offs[i]).padStart(10,"0")+" 00000 n \n";
+  put(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+
+let pdfBusy=false;
+async function makePdf(kind){
+  if(pdfBusy) return;
+  pdfBusy=true;
+  try{
+    if(document.fonts) await document.fonts.ready;
+    const pages=await renderSheet(sheetSpec(kind)), jpegs=[];
+    for(const c of pages) jpegs.push(await canvasJpeg(c));
+    await offerFile(pdfFromJpegs(jpegs), fileName(kind)+".pdf");
+  }catch(e){ alert("יצירת ה-PDF נכשלה: "+((e&&e.message)||e)); }
+  finally{ pdfBusy=false; }
+}
+
+/* מסירת הקובץ: אין דרך אחת שעובדת בכל מקום, ולכן כמה אפשרויות.
+   שיתוף חייב לרוץ ישירות מלחיצה — לכן הוא בכפתור נפרד ולא מיד אחרי היצירה */
+async function offerFile(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const file=typeof File==="function" ? new File([blob],filename,{type:blob.type}) : null;
+  let canShare=false;
+  try{ canShare=!!(file && navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
   const dl=await useCap("downloads");
-  if(dl){ try{ await dl.save({filename:fn,data:blob}); return; }catch(e){} }
-  const a=el("a",{href:URL.createObjectURL(new Blob([blob],{type:"application/json"})),download:fn});
-  document.body.append(a); a.click(); a.remove();
+  const close=()=>{ m.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); };
+  const m=el("div",{class:"modal",role:"dialog","aria-modal":"true",onclick:e=>{ if(e.target===m) close(); }},
+    el("div",{class:"card"},
+      el("h2",{},"הקובץ מוכן"),
+      el("div",{class:"sub mono",style:"overflow-wrap:anywhere"},filename),
+      el("div",{class:"bar"},
+        canShare?el("button",{class:"btn",type:"button",
+          onclick:()=>navigator.share({files:[file],title:filename}).catch(()=>{})},"שיתוף / שמירה בקבצים"):null,
+        dl?el("button",{class:"btn ghost",type:"button",onclick:()=>dl.save({filename,data:blob}).catch(()=>{})},"שמירה"):null,
+        el("a",{class:"btn ghost",href:url,download:filename},"הורדה"),
+        el("a",{class:"btn ghost",href:url,target:"_blank",rel:"noopener"},"פתיחה")),
+      el("div",{class:"sub",style:"margin:12px 0 0"},"אם כפתור אחד לא מגיב באפליקציה שבה הטופס פתוח, נסה את האחר."),
+      el("div",{class:"bar"},el("span",{class:"spacer"}),el("button",{class:"btn ghost",type:"button",onclick:close},"סגירה"))));
+  document.body.append(m);
+}
+
+function exportJson(){
+  const json=JSON.stringify({...S,exportedAt:stamp()},null,2);
+  offerFile(new Blob([json],{type:"application/json"}), `${fileName("log")}.json`);
 }
 
 /* ============ records list ============ */
