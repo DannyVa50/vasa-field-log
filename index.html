@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="יומן שדה">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <meta name="color-scheme" content="light">
 <style>html{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>יומן שדה ומשמורת</title>
@@ -171,6 +177,22 @@ table.compact td.rownum,table.compact .tickcell{width:auto}
 .modal{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px}
 .modal .card{width:100%; max-width:440px}
 .modal .bar a.btn{text-decoration:none; display:inline-flex; align-items:center}
+.modal .card{max-height:calc(100vh - 32px); overflow-y:auto}
+
+/* ---------- installed app — update, install ---------- */
+button.pill{font-family:inherit; cursor:pointer; min-height:30px}
+.pill.act{border-color:var(--accent); color:var(--accent-ink); background:var(--accent-soft)}
+.install{margin-bottom:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+.install > span{flex:1; min-width:220px}
+
+/* ---------- email ---------- */
+.picks{display:flex; flex-direction:column; gap:8px; margin:14px 0 4px}
+.picks .chip{text-align:right; width:100%}
+.picks .ck{display:inline-block; width:1.5em; font-weight:700}
+.mailbody{white-space:pre-line; font-size:13px; background:var(--sunk); border:1.5px solid var(--line-2); border-radius:8px; padding:10px 12px; max-height:180px; overflow-y:auto; margin-top:10px}
+.files{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px; font-size:13.5px}
+.files li{display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; overflow-wrap:anywhere}
+.files a.btn{text-decoration:none; display:inline-flex; align-items:center}
 </style>
 </head>
 <body>
@@ -184,6 +206,8 @@ table.compact td.rownum,table.compact .tickcell{width:auto}
         <span class="pill" id="syncPill">מקומי</span>
         <span class="pill lock" id="lockPill" hidden>נעול</span>
         <span class="pill local" id="fullPill" hidden>האחסון במכשיר מלא — השינוי האחרון לא נשמר</span>
+        <button class="pill act" id="updPill" type="button" hidden>גרסה חדשה מוכנה — רענון</button>
+        <button class="pill act" id="installPill" type="button" hidden>התקנה כאפליקציה</button>
       </span>
     </div>
     <div class="docbar" id="docbar"></div>
@@ -192,6 +216,7 @@ table.compact td.rownum,table.compact .tickcell{width:auto}
 </div>
 
 <main>
+  <div id="installHint" hidden></div>
   <section id="v-docs" role="tabpanel" hidden></section>
   <section id="v-day" role="tabpanel"></section>
   <section id="v-log" role="tabpanel" hidden></section>
@@ -927,19 +952,21 @@ function viewHand(){
 
   v.append(el("div",{class:"card"},
     el("h2",{},"הפקת קבצים"),
-    el("div",{class:"sub"},"הקבצים נוצרים ישירות באפליקציה. אחרי היצירה: שיתוף (שמירה בקבצים, מייל) או הורדה"),
+    el("div",{class:"sub"},"הקבצים נוצרים ישירות באפליקציה, גם בלי קליטה. ״שליחה במייל״ מצרף את הקבצים שבוחרים למייל חדש, עם נושא וגוף הודעה מוכנים"),
     el("div",{class:"bar",style:"margin-top:0"},
       el("button",{class:"btn ghost",onclick:()=>makePdf("log")},"PDF יומן שדה"),
       el("button",{class:"btn ghost",onclick:()=>makePdf("coc")},"PDF שרשרת משמורת"),
       el("button",{class:"btn ghost",onclick:()=>makePdf("split")},"PDF משמורת פיצול"),
-      el("button",{class:"btn",onclick:makeXlsx},"Excel ללקוח")),
+      el("button",{class:"btn ghost",onclick:makeXlsx},"Excel ללקוח"),
+      el("span",{class:"spacer"}),
+      el("button",{class:"btn",onclick:mailDialog},"שליחה במייל")),
     el("div",{class:"sub",style:"margin:10px 0 0"},
       "קובץ ה-Excel כולל את פרטי היום, יומן השדה ושרשרת המשמורת (ומשמורת הפיצול, כשיש) — טבלאות שהיועץ יכול להעתיק לדוחות"),
     el("div",{class:"note",style:"margin-top:14px"},
-      "שמות הקבצים: ",el("span",{class:"mono"},`${fileName("log")}`),
-      " · ",el("span",{class:"mono"},`${fileName("coc")}`),
-      " · ",el("span",{class:"mono"},`${fileName("split")}`),
-      " · ",el("span",{class:"mono"},`${fileName("xlsx")}.xlsx`))));
+      "שמות הקבצים: ",el("span",{class:"mono"},showName(`${fileName("log")}.pdf`)),
+      " · ",el("span",{class:"mono"},showName(`${fileName("coc")}.pdf`)),
+      " · ",el("span",{class:"mono"},showName(`${fileName("split")}.pdf`)),
+      " · ",el("span",{class:"mono"},showName(`${fileName("xlsx")}.xlsx`)))));
   return v;
 }
 
@@ -972,6 +999,9 @@ function fileName(kind){
   const site=(S.head.site||"אתר").trim().replace(/[\\/:*?"<>|]/g,"-");
   return `${KIND_NAME[kind]} ${site} ${ddmmyy(S.head.date)}`.trim();
 }
+/* לתצוגה בלבד: בטקסט מימין לשמאל "171026.pdf" מוצג כ-"pdf.171026". סימן כיוון שקוף (LRM)
+   לפני התאריך מחזיר את הסדר. לא נכנס לשם הקובץ עצמו */
+const showName = n => String(n).replace(/(\d+\.[a-z]+)$/i,"‎$1");
 /* הטפסים מודפסים על עמודי הטופס הרשמי עצמו: ייצוא ה-PDF של קובץ ה-Word (forms/) משמש רקע,
    כולל הכותרת, הלוגואים, ההצהרות והכותרת התחתונה, והנתונים נכתבים לתוך התאים.
    כל הקואורדינטות בנקודות PDF, כפי שנמדדו מהייצוא: [x0,x1,y0,y1], x משמאל, y מלמעלה.
@@ -1490,7 +1520,7 @@ async function offerFile(blob, filename){
   const m=el("div",{class:"modal",role:"dialog","aria-modal":"true",onclick:e=>{ if(e.target===m) close(); }},
     el("div",{class:"card"},
       el("h2",{},"הקובץ מוכן"),
-      el("div",{class:"sub mono",style:"overflow-wrap:anywhere"},filename),
+      el("div",{class:"sub mono",style:"overflow-wrap:anywhere"},showName(filename)),
       el("div",{class:"bar"},
         canShare?el("button",{class:"btn",type:"button",
           onclick:()=>navigator.share({files:[file],title:filename}).catch(()=>{})},"שיתוף / שמירה בקבצים"):null,
@@ -1505,6 +1535,107 @@ async function offerFile(blob, filename){
 function exportJson(){
   const json=JSON.stringify({...S,exportedAt:stamp()},null,2);
   offerFile(new Blob([json],{type:"application/json"}), `${fileName("log")}.json`);
+}
+
+/* ============ שליחה במייל ============
+   דף אינטרנט לא יכול לצרף קובץ למייל בעצמו. גיליון השיתוף של המכשיר (navigator.share) כן:
+   בוחרים בו Mail או Outlook, והמייל נפתח עם הקבצים וגוף ההודעה. הנמען נבחר במייל עצמו.
+   שני שלבים, כמו ב-offerFile: יצירת הקבצים לוקחת זמן, והשיתוף חייב לרוץ ישירות מלחיצה.
+   בלי תמיכה בשיתוף קבצים (למשל Firefox במחשב): הורדת כל קובץ, ומייל שנפתח עם הנושא והגוף */
+const MAIL_KINDS=[
+  {kind:"log",   label:"יומן שדה — PDF",           def:()=>true},
+  {kind:"coc",   label:"שרשרת משמורת — PDF",       def:()=>cocRows().length>0},
+  {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:()=>splitRows().length>0},
+  {kind:"xlsx",  label:"Excel ללקוח",              def:()=>false}
+];
+async function mailFile(kind){
+  const blob = kind==="xlsx" ? buildXlsx() : await buildPdf(kind);
+  return {name:fileName(kind)+(kind==="xlsx"?".xlsx":".pdf"), blob};
+}
+/* הנושא חוזר גם בראש הגוף — לא בכל מכשיר הנושא עובר מגיליון השיתוף למייל */
+function mailText(names){
+  const h=S.head, site=(h.site||"").trim()||"ללא שם אתר";
+  const subject=`מסמכי יום דיגום — ${site} — ${fmtFull(h.date)}`;
+  const counts=[`${meta(S).n} ביומן השדה`, `${cocRows().length} למשמורת`,
+    splitRows().length?`${splitRows().length} לפיצול`:""].filter(Boolean).join(", ");
+  const facts=[["אתר",site],["כתובת",h.address],["תאריך",fmtFull(h.date)],["לקוח",h.client],
+    ["דוגמים",[h.s1,h.s2].filter(Boolean).join(", ")],["דגימות",counts]]
+    .filter(([,v])=>v&&String(v).trim()).map(([k,v])=>`${k}: ${v}`);
+  const body=["שלום,","",`מצורפים מסמכי יום הדיגום — ${site}, ${fmtFull(h.date)}.`,"",...facts,
+    "","קבצים מצורפים:",...names.map(n=>`• ${showName(n)}`),
+    "","בברכה,",...[h.s1,"וזה אקולוגיה בע״מ","www.vasa-eco.co.il"].filter(Boolean)].join("\n");
+  return {subject, body};
+}
+function mailDialog(){
+  const opts=MAIL_KINDS.filter(o=>!o.when||o.when());
+  const pick=new Set(opts.filter(o=>o.def()).map(o=>o.kind));
+  let state="pick", ready=null, urls=[];
+  const close=()=>{ m.remove(); const u=urls; setTimeout(()=>u.forEach(x=>URL.revokeObjectURL(x)),60000); };
+  const card=el("div",{class:"card"});
+  const m=el("div",{class:"modal",role:"dialog","aria-modal":"true",onclick:e=>{ if(e.target===m && state!=="busy") close(); }},card);
+
+  async function prepare(){
+    state="busy"; draw();
+    try{
+      const files=[];
+      for(const o of opts) if(pick.has(o.kind)) files.push(await mailFile(o.kind));
+      ready={files, ...mailText(files.map(f=>f.name))};
+      state="ready";
+    }catch(e){ alert("יצירת הקבצים נכשלה: "+((e&&e.message)||e)); state="pick"; }
+    draw();
+  }
+  function shareData(){
+    return {files:ready.files.map(f=>typeof File==="function"?new File([f.blob],f.name,{type:f.blob.type}):null),
+      title:ready.subject, text:ready.body};
+  }
+  function canShareFiles(){
+    try{ const d=shareData(); return !!(navigator.canShare && d.files.every(Boolean) && navigator.canShare({files:d.files})); }
+    catch(e){ return false; }
+  }
+  async function share(){
+    try{ await navigator.share(shareData()); close(); }
+    catch(e){ if(e && e.name!=="AbortError") alert("פתיחת המייל נכשלה: "+((e&&e.message)||e)); }
+  }
+  const mailto=()=>`mailto:?subject=${encodeURIComponent(ready.subject)}&body=${encodeURIComponent(ready.body.replace(/\n/g,"\r\n"))}`;
+
+  function draw(){
+    card.textContent="";
+    card.append(el("h2",{},"שליחה במייל"));
+    if(state!=="ready"){
+      card.append(el("div",{class:"sub"},"בחר את הקבצים לצירוף למייל"),
+        el("div",{class:"picks"},...opts.map(o=>el("button",{class:"chip",type:"button",
+          "aria-pressed":String(pick.has(o.kind)),disabled:state==="busy",
+          onclick:()=>{ pick.has(o.kind)?pick.delete(o.kind):pick.add(o.kind); draw(); }},
+          el("span",{class:"ck","aria-hidden":"true"},pick.has(o.kind)?"✓":""),o.label))),
+        el("div",{class:"bar"},
+          el("button",{class:"btn",type:"button",disabled:state==="busy"||!pick.size,onclick:prepare},
+            state==="busy"?"מכין את הקבצים…":"הכנת המייל"),
+          el("span",{class:"spacer"}),
+          el("button",{class:"btn ghost",type:"button",disabled:state==="busy",onclick:close},"ביטול")));
+      return;
+    }
+    const native=canShareFiles();
+    urls.forEach(x=>URL.revokeObjectURL(x));
+    urls=native?[]:ready.files.map(f=>URL.createObjectURL(f.blob));
+    card.append(
+      el("div",{class:"sub"},native
+        ? "בלחיצה על ״פתיחת המייל״ נפתח חלון השיתוף. בחר בו Mail או Outlook — המייל ייפתח עם הקבצים המצורפים. את הנמען בוחרים במייל"
+        : "המכשיר הזה לא מאפשר לצרף קבצים למייל אוטומטית. הורד את הקבצים, פתח את המייל וצרף אותם אליו"),
+      el("ul",{class:"files"},...ready.files.map((f,i)=>el("li",{},
+        el("span",{class:"mono"},showName(f.name)),
+        native?null:el("a",{class:"btn ghost sm",href:urls[i],download:f.name},"הורדה")))),
+      el("div",{class:"f",style:"margin-top:12px"},el("label",{},"נושא"),el("div",{class:"mono",style:"overflow-wrap:anywhere"},ready.subject)),
+      el("div",{class:"mailbody"},ready.body),
+      el("div",{class:"bar"},
+        native
+          ? el("button",{class:"btn",type:"button",onclick:share},"פתיחת המייל")
+          : el("a",{class:"btn",href:mailto(),style:"text-decoration:none;display:inline-flex;align-items:center"},"פתיחת המייל"),
+        el("button",{class:"btn ghost",type:"button",onclick:()=>{ state="pick"; ready=null; draw(); }},"שינוי הבחירה"),
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn ghost",type:"button",onclick:close},"סגירה")));
+  }
+  draw();
+  document.body.append(m);
 }
 
 /* ============ records list ============ */
@@ -1576,9 +1707,54 @@ function render(){
   document.getElementById("fullPill").hidden=!storageFull;
 }
 
-addEventListener("pagehide",()=>{ flushChanges(); if(!pristine(S)){ S.updated=stamp(); persistLocal(); } });
+function persistNow(){ flushChanges(); if(!pristine(S)){ S.updated=stamp(); persistLocal(); } }
+addEventListener("pagehide",persistNow);
+
+/* ============ אפליקציה מותקנת — עבודה בלי קליטה, עדכונים, התקנה ============
+   sw.js שומר את האפליקציה במכשיר: היא נפתחת מהמטמון מיד, ובודקת ברקע אם יש גרסה חדשה.
+   כשהדף נפתח מקובץ (file://) אין service worker — הכול עובד, רק בלי מטמון ובלי עדכונים */
+const K_HINT="vasa-install-hint";
+const standalone=()=>matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
+const appleTouch=()=>/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+
+function installHint(){
+  const box=document.getElementById("installHint");
+  let off=false; try{ off=localStorage.getItem(K_HINT)==="off"; }catch(e){}
+  if(off || standalone() || !appleTouch() || !/^https:$/.test(location.protocol)){ box.hidden=true; return; }
+  box.textContent="";
+  box.append(el("div",{class:"note install"},
+    el("span",{},el("b",{},"להתקנה במסך הבית: "),
+      "לחץ על כפתור השיתוף של Safari ובחר ״הוספה למסך הבית״. האפליקציה תיפתח מהסמל ותעבוד גם בלי קליטה. ",
+      el("b",{},"כדאי להתקין לפני שמתחילים לעבוד"),
+      " — רשומות שנשמרו כאן בדפדפן אינן עוברות לאפליקציה המותקנת."),
+    el("button",{class:"btn ghost sm",type:"button",onclick:()=>{
+      try{ localStorage.setItem(K_HINT,"off"); }catch(e){} box.hidden=true; }},"הבנתי")));
+  box.hidden=false;
+}
+
+function setupApp(){
+  const upd=document.getElementById("updPill"), inst=document.getElementById("installPill");
+  upd.onclick=()=>{ persistNow(); location.reload(); };
+  if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
+    const sw=navigator.serviceWorker;
+    sw.onmessage=e=>{ if(e.data && e.data.type==="update-ready") upd.hidden=false; };
+    /* בפתיחה, וגם כשחוזרים לאפליקציה — באייפד אפליקציה מותקנת בדרך כלל ממשיכה ולא נטענת מחדש */
+    const check=()=>{ if(sw.controller) sw.controller.postMessage({type:"check-update"}); };
+    sw.register("sw.js").then(check).catch(()=>{});
+    document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") check(); });
+  }
+  /* מבקש מהדפדפן לא למחוק את הרשומות כשהמכשיר מתמלא */
+  try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
+  /* מחשב (Chrome / Edge): כפתור התקנה. באייפד אין אירוע כזה — שם מופיעה ההנחיה */
+  let deferred=null;
+  addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); deferred=e; inst.hidden=false; });
+  addEventListener("appinstalled",()=>{ deferred=null; inst.hidden=true; });
+  inst.onclick=async()=>{ if(!deferred) return; deferred.prompt(); try{ await deferred.userChoice; }catch(e){} deferred=null; inst.hidden=true; };
+  installHint();
+}
 
 (async function init(){
+  setupApp();
   localIdx=readJSON(K_INDEX)||[];
   migrateOld();
   let cur=null; try{ cur=localStorage.getItem(K_CUR); }catch(e){}

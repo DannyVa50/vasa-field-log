@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "יומן שדה ומשמורת — וזה אקולוגיה",
+  "short_name": "יומן שדה",
+  "description": "יומן שדה (טופס 57) ושרשרת משמורת (טופס 33.1) לדיגום קרקע — עובד גם בלי קליטה",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#E6EAE7",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

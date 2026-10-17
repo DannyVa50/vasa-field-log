@@ -1,138 +1,78 @@
-# יומן שדה ומשמורת — וזה אקולוגיה
+# vasa-field-log — field log & chain of custody
 
-אפליקציית ווב למילוי שני טפסי שדה על אייפד, במקום מילוי בכתב יד וסריקה.
+An offline-first web app (PWA) that Vasa Ecology Ltd. (וזה אקולוגיה בע״מ) samplers use on an iPad to fill two field forms for soil sampling. It replaces filling them in by hand and scanning them:
 
-**סטטוס: אב טיפוס.** מיועד לאימות הזרימה מול דוגם, לא לשימוש מבצעי.
+- **Form 57 — field log** (יומן שדה)
+- **Form 33.1 — chain of custody** (שרשרת משמורת), plus a second copy for split samples sent to a secondary lab
+
+It outputs PDFs printed **onto the official forms**, a client Excel file, and an email with the chosen files attached.
+
+**App:** https://dannyva50.github.io/vasa-field-log/
+Open it once with reception and add it to the home screen. From then on it opens from the icon and works with no reception. User steps (in Hebrew) are in [docs/user-guide.md](docs/user-guide.md).
+
+**Status:** in field use as of October 2026. Records live only on the device where they were entered (no sync yet). See [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
-## מה זה עושה
+## Language rule
 
-שני הטפסים אינם ישויות נפרדות אלא תצוגות של **רשומת יום דיגום אחת**. זה מה שפותר את ההקלדה הכפולה — האתר, התאריך, הדוגם, מכשיר ה-PID והלקוח נכנסים פעם אחת ומופיעים בשניהם.
-
-| טופס | תוכן |
+| Audience | Language |
 |---|---|
-| **57 — יומן שדה** | מס׳ קידוח · עומק · שם דגימה · שעה · ליתולוגיה · צבע (עד שניים) · ריח · לחות · PID · PID 20% · הערות |
-| **33.1 — שרשרת משמורת** | זיהוי דגימה · עומק · שעה · כלי דיגום · אריזות · סוג (ברירת מחדל: חטף) · 7 בדיקות קבועות (TPH D+O, ICP מתכות, PFAS, CR6+, PH, SVOC, VOC) ועד 5 פתוחות · PID · הערות |
+| Anything the **end user** sees: UI, PDFs, Excel, file names, email text, [the user guide](docs/user-guide.md) | **Hebrew only**, right-to-left |
+| Documentation for **engineers and AI agents** (this README, `CLAUDE.md`, `docs/*.md` except the user guide) | English |
+| Code identifiers | English. Code comments are mostly Hebrew (existing convention), and either language is fine |
+| Folder and file names in the repo | English (Windows PowerShell 5.1 breaks on Hebrew paths) |
 
-הדוגם מסמן דגימה ביומן, והיא עוברת למשמורת כשעומק, שעה ו-PID כבר בפנים. שורה חדשה ביומן יורשת מהשורה שמעליה את מס׳ הקידוח, סוג הקרקע והצבע.
+## Documentation map
 
-**תצוגה:** ערכת צבעים אחת, בהירה ובניגודיות גבוהה, לקריאה באייפד בשמש. אין מצב כהה.
-
-## לוגיקה מהוראת עבודה 30001
-
-- **שם דגימה אוטומטי** — `מס׳ קידוח + עומק`, ניתן לדרוס ידנית
-- **PID מעל 20 חל״מ** — סימון והצעה לשלוח ל-VOC ולתחם מטר מעל ומתחת (סעיף 3.3)
-- **סמליל הרשות** — יורד מהמשמורת כשהעבודה אינה בהסמכה (סעיף 7ב)
-- **בקרות איכות** — הערה בסוף העבודה: כמה חזרות ופיצולים נדרשים. הפיצולים נספרים מעמודת ״משמורת פיצול״; החזרות אינן מסומנות באפליקציה ויש לוודא אותן. **אינה חוסמת**
-- **חריגות ותוספות** — מהות השינוי, הסבר לנחיצות, מי אישר (סעיף 8)
-- **אחסון לילה** — מקום, אחראי, שעות, ותקינות 4±2°C
-- **שרטוט** — לדיגום ערמות ולדיגום מוודא (סעיף 7ג)
-
-## תיעוד שינויים — ISO 17025
-
-כל ערך שהוזן ושונה נשמר עם **הערך המקורי**, מי שינה ומתי. חל גם על תיבות סימון ועל חתימות. אינו ניתן למחיקה מתוך האפליקציה.
-
-נרשם רק **שינוי של ערך קיים**, אחרי שהתייצב (3 שניות). לא נרשמים: הזנה ראשונה לשדה ריק, נגיעה בשדה בלי לשנות אותו (כולל שדה שעה/תאריך שהאייפד ממלא מעצמו), נגיעה בחתימה או בשרטוט בלי לצייר, והבחירה הראשונה בערך שהועתק לשורה חדשה (מס׳ קידוח, שעה, סוג קרקע).
-
-הרשומה **ננעלת** אחרי חתימת נציג המעבדה. פתיחה מחדש דורשת סיבה ונרשמת כגרסה חדשה.
-
-## חתימות ומסירה
-
-שני מסלולים:
-
-1. **מסירה באתר** — נציג המעבדה חותם על האייפד בשטח
-2. **איסוף מהמשרד** — הדגימות נשארות בקירור, והמזכירה פותחת את אותה רשומה במחשב או בטלפון, ממלאת את פרטי נציג המעבדה ומחתימה אותו
-
-## רשומות
-
-כל יום דיגום הוא **רשומה נפרדת** עם מזהה ייחודי, כך שכמה צוותים באותו תאריך אינם דורסים זה את זה.
-
-- **שמירה ורשומה חדשה** — בראש המסך. שומר את הרשומה הפתוחה ופותח רשומה ריקה. רשומה ריקה שלא נגעו בה אינה נשמרת
-- **לשונית רשומות** — כל הרשומות, מהחדשה לישנה לפי תאריך הדיגום. לחיצה על רשומה פותחת אותה
-- **שם הרשומה** — נבנה אוטומטית: `אתר · תאריך · אות היום · דוגם 1`, ומתעדכן כשהפרטים משתנים
-- רשומה ממכשיר אחר מסומנת **במאגר המשותף**, ונפתחת רק אם המאגר מחזיר אותה
-- שינוי שטרם נרשם בתיעוד השינויים נרשם ברשומה שלו לפני המעבר לרשומה אחרת או סגירת הדף
-
-רשומת היום היחידה מגרסאות קודמות עוברת אוטומטית לרשימה בפתיחה הראשונה.
-
----
-
-## הרצה
-
-אין תלויות ואין שלב בנייה. פתח את `index.html` בדפדפן.
-
-באייפד, בשלב אב הטיפוס: פותחים את הקובץ באפליקציית **Documents by Readdle**.
-
-### אחסון
-
-- **מקומי** — `localStorage`, שורד רענון וסגירה. כל הרשומות נשמרות במכשיר ובדפדפן הספציפיים — מחיקת הסמל ממסך הבית או ניקוי נתוני Safari מוחקת אותן. יש לפתוח את הקובץ תמיד מאותו מיקום, אחרת הדפדפן לא יראה את הרשומות הקודמות. כשהאחסון מתמלא מופיע תג אזהרה
-- **מסונכרן** — כשהדף רץ כארטיפקט של Claude, `claude.use("db")` מספק אחסון משותף שמאפשר את מסלול המשרד. כל רשומה נשמרת תחת `days/<מזהה>`, ורשימת הרשומות תחת `index/<מזהה>`. מחוץ לסביבה הזו הקריאה מוגנת ומחזירה `null`, והאפליקציה עוברת לאחסון מקומי בלבד
-
-התג בראש המסך מציג **מסונכרן** או **מקומי בלבד**.
-
-### PDF
-
-שלושה כפתורים — יומן שדה, שרשרת משמורת, משמורת פיצול — וכל אחד יוצר קובץ נפרד בשם `<טופס> <אתר> DDMMYY.pdf`.
-
-**הקובץ הוא הטופס הרשמי עצמו.** עמודי טופס 57 וטופס 33.1 (ייצוא PDF של קובצי ה-Word שב-`forms/`) משמשים רקע, והנתונים נכתבים לתוך התאים. הכותרת, הלוגואים, ההצהרות, המקרא והכותרת התחתונה זהים למקור.
-
-- **טופס 57** — A4 לאורך. 30 שורות בעמוד 1, 30 בכל עמוד המשך
-- **טופס 33.1** — A4 לרוחב. 10 שורות בעמוד 1, 20 בכל עמוד המשך. ״סוף דו״ח״ תמיד בסוף הטופס: בעמוד האחרון, וגם כשיש עמוד אחד בלבד
-- מודפסים רק העמודים שנדרשים לדגימות. עמוד המשך נוסף כשהשורות או ההערות לא נכנסות, וה״דף X מתוך Y״ ומספרי השורות בשוליים מתעדכנים
-- כלי דיגום וסוג דגימה מודפסים בקודים של מקרא הטופס: 1 = שרוול (ליינר), 2 = צנצנת · ח = חטף, מ = מורכב
-- כן/לא, אין/יש מוקפים בעיגול; תיבות הסימון מסומנות ב-V
-- חריגות מודפסות בשורת ״הערות״ של 33.1, ואחריהן ההערות שהוזנו. הערה ארוכה ממשיכה לעמוד האחרון
-- סמליל הרשות יורד משני העמודים כשהעבודה אינה בהסמכה
-- שרטוט (סעיף 7ג) הוא חלק מיומן השדה: עמוד נוסף של טופס 57, עם הכותרת, האתר, התאריך והכותרת התחתונה, ונספר ב״דף מתוך״
-
-הקובץ נוצר בתוך האפליקציה ולא דרך דיאלוג ההדפסה: `window.print()` אינו עושה דבר בתצוגת HTML שבתוך אפליקציה כמו Documents by Readdle. העמוד מצויר על canvas ב-200 DPI ונארז כ-PDF. התוצאה היא תמונה של הטופס — הטקסט בקובץ אינו ניתן לחיפוש או להעתקה.
-
-**מהדורה חדשה של טופס:** מחליפים את קובץ ה-Word ב-`forms/`, שומרים ממנו PDF באותו שם, ומריצים `python build/embed_forms.py`. אם השתנה מיקום של תא, יש לעדכן את הקואורדינטות ב-`F57` / `F33` שב-`index.html` (נקודות PDF, נמדדות מהייצוא).
-
-אחרי היצירה נפתח חלון עם כמה דרכים לקבל את הקובץ, כי לא כל אחת עובדת בכל אפליקציה: **שיתוף / שמירה בקבצים** (כשהמכשיר תומך), **הורדה**, **פתיחה**.
-
-### Excel ללקוח
-
-כפתור **Excel ללקוח** בלשונית מסירה וקבצים יוצר קובץ אחד ליום דיגום, `נתוני דיגום <אתר> DDMMYY.xlsx`, ליועץ שמשתמש בנתונים בדוחות שלו:
-
-| גיליון | תוכן |
+| File | What's in it |
 |---|---|
-| **פרטי יום הדיגום** | אתר, לקוח, דוגמים, ציוד, תנאים, מעבדה, חריגות, אחסון, מסירה והערות |
-| **יומן שדה** | שורה לכל דגימה, בעמודות של טופס 57 |
-| **שרשרת משמורת** | שורה לכל דגימה, בעמודות של טופס 33.1. בדיקה נדרשת מסומנת V |
-| **משמורת פיצול** | רק כשיש דגימות פיצול |
+| [CLAUDE.md](CLAUDE.md) | Rules and gotchas for AI agents (and humans) changing this repo. **Read first.** |
+| [docs/domain.md](docs/domain.md) | The business: who uses the app, a sampling day, the two forms, the work-instruction rules, and a Hebrew ↔ code glossary |
+| [docs/architecture.md](docs/architecture.md) | How the code works: data model, storage, change log, rendering, the PDF/Excel generators, email, the service worker |
+| [docs/operations.md](docs/operations.md) | Hosting, deploying, updates on devices, backups, troubleshooting, replacing a form edition |
+| [docs/decisions.md](docs/decisions.md) | Dated decision log: what was decided, by whom, and why |
+| [docs/roadmap.md](docs/roadmap.md) | Known limits and what's next |
+| [docs/user-guide.md](docs/user-guide.md) | User guide, in Hebrew |
 
-הגיליונות מימין לשמאל, שורת הכותרת קפואה ויש סינון. עומק, PID, טמפרטורה ומספר אריזות נשמרים כמספרים. כלי הדיגום וסוג הדגימה כתובים במילים (שרוול / צנצנת, חטף / מורכב) ולא בקודים של הטופס.
-
-הקובץ נבנה באפליקציה עצמה, בלי ספריות חיצוניות, ולכן עובד גם בלי קליטה.
-
----
-
-## מבנה
+## Repository layout
 
 ```
-index.html               האפליקציה. קובץ בודד, בלי תלויות (כולל עמודי הטפסים הריקים)
-forms/                   טפסים 57 ו-33.1 — קובצי ה-Word המקוריים וייצוא ה-PDF שלהם
-build/embed_forms.py     מטמיע את עמודי הטפסים ב-index.html
-build/make_standalone.py עוטף גרסת ארטיפקט לקובץ עצמאי
+index.html              The whole app: HTML + CSS + JS in one file, no dependencies,
+                        including the blank form pages (base64 PNG, ~400 KB)
+sw.js                   Service worker: offline cache and update checks
+manifest.webmanifest    PWA manifest: name, icons, standalone display
+icons/                  App icons, generated by build/make_icons.py from icons/source-logo.png
+forms/                  The official Word forms 57 and 33.1 and their PDF exports (the print templates)
+build/embed_forms.py    Renders forms/*.pdf into index.html (between the FORM-PAGES markers)
+build/make_icons.py     Builds the icons from the company logo
+build/make_standalone.py  LEGACY: wrapped the original Claude-artifact version into a standalone file. Not used
+docs/                   Documentation (see above) and install-qr.png (QR code of the app link)
+.nojekyll               Tells GitHub Pages to serve files as-is
 ```
 
-## מה עוד לא נכנס
+## Running locally
 
-- עבודה לא־מקוונת מלאה (service worker)
-- צילום נקודת קידוח
-- קואורדינטות GPS אוטומטיות
-- משמורת פיצול למעבדה משנית
+There is no build step. To run it locally, serve the folder over HTTP: the service worker needs http(s), and `localhost` counts as secure.
+
+```bash
+python -m http.server 8732
+```
+
+Then open http://localhost:8732/. Opening `index.html` directly from disk (`file://`) also works, but without offline caching or update checks. That is how the prototype ran in Documents by Readdle.
+
+Python is needed only for the `build/` scripts (`pymupdf`, `Pillow`).
+
+## Deploying
+
+A push to `main` deploys. GitHub Pages serves `main` from the root of the repo. Installed devices pick up the new version the next time the app is opened or brought back to the foreground: a "גרסה חדשה מוכנה — רענון" pill appears. Details: [docs/operations.md](docs/operations.md).
 
 ---
 
-## מסמכי ייחוס
+## Reference documents
 
-- טופס 57 — יומן שדה, מהדורה 10 (13.03.2026) · טופס 33.1 — שרשרת משמורת לדיגום קרקע, מהדורה 21 (10.09.2026)
-- הוראת עבודה 30001 לדיגום קרקע, מהדורה 35 (30.08.2026)
-- הנחיות מקצועיות לביצוע סקר קרקע, המשרד להגנת הסביבה (21.04.2016)
+- Form 57 — field log, edition 10 (13.03.2026) · Form 33.1 — chain of custody for soil sampling, edition 21 (10.09.2026)
+- Work instruction 30001 for soil sampling, edition 35 (30.08.2026)
+- Ministry of Environmental Protection, professional guidelines for soil surveys (21.04.2016)
 
----
-
-© וזה אקולוגיה בע״מ. ISO/IEC 17025:2017, מס׳ הסמכה 294. כל הזכויות שמורות.
+© Vasa Ecology Ltd. ISO/IEC 17025:2017, accreditation no. 294. All rights reserved.
