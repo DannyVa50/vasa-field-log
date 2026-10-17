@@ -36,7 +36,7 @@ The import must keep the change log and add a "יובא" (imported) entry.
 - **Check on the iPad** whether the share title becomes the Mail subject. If not, consider putting the subject only in the body's first line.
 - **Photos of borehole points** (planned in the prototype).
 - **Automatic GPS coordinates** per borehole.
-- **Split custody to a secondary lab:** fuller handling than today's second copy of form 33.1, which uses the same handover and storage fields.
+- **Split custody storage:** the split now has its own handover and lab receipt (17.10.2026). It still shares the "storage before handover" fields with the main custody. If splits are stored separately, they'd need their own storage block.
 - **Duplicates (חזרות)** are not marked in the app. The QC note only reminds the sampler.
 - **Sample-level `extra` and `qc` fields** exist in the data model but have no UI.
 - **Searchable PDF text:** PDFs are images today. Real text would need font embedding in `pdfFromJpegs`. Low priority.

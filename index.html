@@ -237,6 +237,9 @@ async function useCap(name){
 /* ============ reference data — הנחיות למילוי שדות ============ */
 const SAMPLERS = ["ענב אורן","אורן פלדמן","ראמי גאנם","עמית אורן","דני וזה"];
 const PIDS     = ["XT-103253","XT-103411","XT-100270","T-118415","07-0127"];
+/* מעבדות לבחירה. "אחר" פותח הקלדה חופשית */
+const LABS     = ["בקטוכם","אלכם","אמינולאב","מכון הנפט"];
+const OTHER    = "אחר";
 const RIGS     = ["דחיקה ישירה – גיאופרוב","דיגום ידני"];
 const WEATHER  = ["שמשי","מעונן","מעונן חלקי","גשום","חם","חם מאוד"];
 const LANDUSE  = ["מגורים","תעשייה","מסחר","חקלאי"];
@@ -285,13 +288,16 @@ function blankDay(id){
       accredited:true, ready5556:false, cooled:true, subDrill:false, subSample:false,
       calLab:false, cal100:false,
       guideSurvey:false, guidePiles:false, planApproved:false, planShown:false,
-      dayLetter:"A", lab:"", labSplit:"", extraTests:Array(EXTRA_N).fill(""),
+      /* lab / labSplit: שם מ-LABS או "אחר", ואז השם המוקלד ב-labOther / labSplitOther. לשם המודפס — labName() */
+      dayLetter:"A", lab:"", labOther:"", labSplit:"", labSplitOther:"", extraTests:Array(EXTRA_N).fill(""),
       notesLog:"", notesCoc:"", notesSplit:""
     },
     samples:[blankSample()], deviations:[],
     storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
+    /* הפיצולים נמסרים למעבדה אחרת — מסירה וקבלה נפרדות, וחתימות bySplit / labSplit */
     handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
-    sigs:{s1:"", s2:"", by:"", lab:""},
+    handoverSplit:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
+    sigs:{s1:"", s2:"", by:"", lab:"", bySplit:"", labSplit:""},
     sketch:"", sketchPhoto:"", changes:[]
   };
 }
@@ -301,7 +307,13 @@ function normalize(d){
   const b=blankDay(d.id);
   const n={...b, ...d,
     head:{...b.head, ...(d.head||{})}, storage:{...b.storage, ...(d.storage||{})},
-    handover:{...b.handover, ...(d.handover||{})}, sigs:{...b.sigs, ...(d.sigs||{})}};
+    handover:{...b.handover, ...(d.handover||{})}, handoverSplit:{...b.handoverSplit, ...(d.handoverSplit||{})},
+    sigs:{...b.sigs, ...(d.sigs||{})}};
+  /* שם מעבדה שהוקלד חופשי בגרסאות קודמות ואינו ברשימה — עובר ל"אחר" עם אותו שם, כך שהמודפס לא משתנה */
+  for(const k of ["lab","labSplit"]){
+    const v=String(n.head[k]||"").trim();
+    if(v && v!==OTHER && !LABS.includes(v)){ n.head[k+"Other"]=n.head[k+"Other"]||v; n.head[k]=OTHER; }
+  }
   const ex=Array.isArray(n.head.extraTests)?n.head.extraTests:[];
   n.head.extraTests=Array.from({length:EXTRA_N},(_,i)=>ex[i]||"");
   const tests=t=>(t||[]).map(x=>TEST_OLD[x]||x);
@@ -526,6 +538,8 @@ function qcNeeded(){
   return {n, dup, spl, haveSpl: splitRows().length};
 }
 const allTests = () => TESTS.concat(S.head.extraTests.filter(x=>x && x.trim()));
+/* שם המעבדה להדפסה ולקבצים. key — "lab" או "labSplit" */
+const labName = key => S.head[key]===OTHER ? String(S.head[key+"Other"]||"").trim() : (S.head[key]||"");
 
 /* ============ DOM helpers ============ */
 const el=(t,a={},...kids)=>{
@@ -570,6 +584,14 @@ function multi(vals,list,on){
   return w;
 }
 const toggle=(val,on,label)=>el("button",{class:"chip",type:"button","aria-pressed":String(!!val),disabled:RO(),onclick:()=>on(!val)},label);
+/* בחירת מעבדה מהרשימה, או "אחר" ושם חופשי. אותו שדה מוצג במשמורת ובמסירה */
+function labPicker(key,label,hint){
+  const h=S.head, ok=key+"Other";
+  return el("div",{class:"f"},el("label",{},label),
+    sel(h[key],LABS.concat([OTHER]),x=>setHead(key,x,label)),
+    h[key]===OTHER ? txt(h[ok],x=>setHead(ok,x,`${label} — שם`),{ph:"שם המעבדה"}) : null,
+    hint?el("span",{class:"hint"},hint):null);
+}
 
 /* ============ signature pad ============ */
 function pad(key,label,store){
@@ -834,9 +856,7 @@ function custodyView(kind){
       ? "טופס 33.1 למעבדה המשנית · הדגימות מגיעות מעמודת ״משמורת פיצול״ ביומן השדה"
       : "טופס 33.1 · הדגימות מגיעות מיומן השדה. עומק, שעה ו-PID עוברים אוטומטית"),
     el("div",{class:"grid wide",style:"margin-bottom:14px"},
-      field(isSplit?"מעבדה משנית":"מעבדה",
-        txt(isSplit?S.head.labSplit:S.head.lab,
-          x=>setHead(isSplit?"labSplit":"lab",x,isSplit?"מעבדה משנית":"מעבדה"),{ph:"שם המעבדה"})),
+      labPicker(isSplit?"labSplit":"lab",isSplit?"מעבדה משנית":"מעבדה"),
       field("הערות", area(isSplit?S.head.notesSplit:S.head.notesCoc,
           x=>setHead(isSplit?"notesSplit":"notesCoc",x,isSplit?"הערות משמורת פיצול":"הערות משמורת")),
         "מודפס בשורת ״הערות״ בתחתית טופס 33.1, אחרי החריגות")),
@@ -878,19 +898,63 @@ function custodyView(kind){
 }
 
 /* ============ handover ============ */
+/* שרשרת המשמורת והפיצול נמסרות לשתי מעבדות שונות — לכל אחת מסירה, קבלה וחתימות משלה.
+   התוויות והמפתחות של המשמורת הראשית הם אלה מהגרסאות הקודמות, כדי שתיעוד השינויים יישאר רציף */
+const HAND={
+  coc:  {ho:()=>S.handover,      key:"ho.", pre:"",        by:"by",      lab:"lab",      labKey:"lab",
+         labLabel:"מעבדה"},
+  split:{ho:()=>S.handoverSplit, key:"hs.", pre:"פיצול — ", by:"bySplit", lab:"labSplit", labKey:"labSplit",
+         labLabel:"מעבדה משנית"}};
+/* הרשומה שלמה כשכל מעבדה שקיבלה דגימות חתמה ונרשם שם הנציג */
+const labSigned = kind => { const H=HAND[kind]; return !!(S.sigs[H.lab] && H.ho().labName); };
+const pendingLabs = () => [!labSigned("coc") && "חתימת המעבדה",
+  splitRows().length && !labSigned("split") && "חתימת מעבדת הפיצול"].filter(Boolean);
+
 /* סיום האחסון הוא ברירת המחדל למסירה ולקבלה במעבדה. שדה שמולא ידנית בערך אחר אינו נדרס */
 const HAND_FROM_STORAGE={
   toD:[["byDate","תאריך מסירה"],["labDate","תאריך קבלה"]],
   toT:[["byTime","שעת מסירה"],["labTime","שעת קבלה"]]};
 function storageEnd(k,v){
-  const st=S.storage, ho=S.handover, old=st[k];
+  const st=S.storage, old=st[k];
   setSub(st,k,v,k==="toD"?"סיום אחסון":"שעת סיום אחסון","st."+k);
-  for(const [f,label] of HAND_FROM_STORAGE[k])
-    if(!ho[f] || ho[f]===old) setSub(ho,f,v,label,"ho."+f);
+  for(const kind of splitRows().length?["coc","split"]:["coc"]){
+    const H=HAND[kind], ho=H.ho();
+    for(const [f,label] of HAND_FROM_STORAGE[k])
+      if(!ho[f] || ho[f]===old) setSub(ho,f,v,H.pre+label,H.key+f);
+  }
+}
+
+/* כרטיסי מסירה וקבלה במעבדה — למשמורת (coc) או לפיצול (split) */
+function handCards(kind){
+  const H=HAND[kind], ho=H.ho(), split=kind==="split";
+  const fld=(label,k,logLabel,opts)=>field(label,txt(ho[k],x=>setSub(ho,k,x,H.pre+logLabel,H.key+k),opts));
+  return [
+    el("div",{class:"card"},
+      el("h2",{},split?"מסירה — משמורת פיצול":"מסירה"),
+      el("div",{class:"sub"},split
+        ? "הפיצולים נמסרים למעבדה המשנית בנפרד מהמשמורת"
+        : "ייתכן שהמסירה תתבצע על ידי הפקידה במשרד לשליח המעבדה"),
+      el("div",{class:"grid"},
+        fld("נמסר ע״י","byName","נמסר ע״י",{ph:"שם מלא"}),
+        fld("תאריך","byDate","תאריך מסירה",{type:"date"}),
+        fld("שעה","byTime","שעת מסירה",{type:"time"})),
+      el("div",{style:"margin-top:14px;max-width:420px"}, pad(H.by,split?"חתימת המוסר — פיצול":"חתימת המוסר",S.sigs))),
+    el("div",{class:"card"},
+      el("h2",{},split?"קבלה במעבדה — משמורת פיצול":"קבלה במעבדה"),
+      el("div",{class:"sub"},split
+        ? "נציג המעבדה המשנית, שאליה נשלחו הפיצולים, חותם כאן"
+        : "נציג המעבדה חותם כאן — באתר או במשרד בעת איסוף הדגימות"),
+      el("div",{class:"grid"},
+        labPicker(H.labKey,H.labLabel),
+        fld("התקבל במעבדה ע״י","labName","התקבל במעבדה ע״י",{ph:"שם נציג המעבדה"}),
+        fld("תאריך","labDate","תאריך קבלה",{type:"date"}),
+        fld("שעה","labTime","שעת קבלה",{type:"time"})),
+      el("div",{style:"margin-top:14px;max-width:420px"},
+        pad(H.lab,split?"חתימת נציג מעבדת הפיצול":"חתימת נציג המעבדה",S.sigs)))];
 }
 
 function viewHand(){
-  const v=el("div",{}), ho=S.handover, st=S.storage;
+  const v=el("div",{}), st=S.storage;
 
   const dv=el("div",{class:"card"},
     el("h2",{},"חריגות ותוספות"),
@@ -919,36 +983,29 @@ function viewHand(){
     st.tempOk==="לא תקין"?el("div",{class:"note bad",style:"margin-top:14px"},
       el("b",{},"נדרש טופס חריגים. "),"יש לתעד את החריגה גם בהערות המשמורת — סעיף 8."):null));
 
-  v.append(el("div",{class:"card"},
-    el("h2",{},"מסירה"),
-    el("div",{class:"sub"},"ייתכן שהמסירה תתבצע על ידי הפקידה במשרד לשליח המעבדה"),
-    el("div",{class:"grid"},
-      field("נמסר ע״י", txt(ho.byName,x=>setSub(ho,"byName",x,"נמסר ע״י","ho.byName"),{ph:"שם מלא"})),
-      field("תאריך", txt(ho.byDate,x=>setSub(ho,"byDate",x,"תאריך מסירה","ho.byDate"),{type:"date"})),
-      field("שעה", txt(ho.byTime,x=>setSub(ho,"byTime",x,"שעת מסירה","ho.byTime"),{type:"time"}))),
-    el("div",{style:"margin-top:14px;max-width:420px"}, pad("by","חתימת המוסר",S.sigs))));
+  v.append(...handCards("coc"));
+  if(splitRows().length) v.append(...handCards("split"));
 
+  /* נעילה — רק אחרי שכל מעבדה שקיבלה דגימות חתמה */
+  const pend=pendingLabs();
   v.append(el("div",{class:"card"},
-    el("h2",{},"קבלה במעבדה"),
-    el("div",{class:"sub"},"נציג המעבדה חותם כאן — באתר או במשרד בעת איסוף הדגימות"),
-    el("div",{class:"grid"},
-      field("התקבל במעבדה ע״י", txt(ho.labName,x=>setSub(ho,"labName",x,"התקבל במעבדה ע״י","ho.labName"),{ph:"שם נציג המעבדה"})),
-      field("תאריך", txt(ho.labDate,x=>setSub(ho,"labDate",x,"תאריך קבלה","ho.labDate"),{type:"date"})),
-      field("שעה", txt(ho.labTime,x=>setSub(ho,"labTime",x,"שעת קבלה","ho.labTime"),{type:"time"}))),
-    el("div",{style:"margin-top:14px;max-width:420px"}, pad("lab","חתימת נציג המעבדה",S.sigs)),
-    el("div",{class:"bar"},
+    el("h2",{},"נעילת הרשומה"),
+    el("div",{class:"sub"},splitRows().length
+      ? "אחרי חתימת המעבדה ומעבדת הפיצול. רשומה נעולה אינה ניתנת לעריכה, ופתיחה מחדש דורשת סיבה ונרשמת"
+      : "אחרי חתימת המעבדה. רשומה נעולה אינה ניתנת לעריכה, ופתיחה מחדש דורשת סיבה ונרשמת"),
+    el("div",{class:"bar",style:"margin-top:0"},
       S.locked
         ? el("button",{class:"btn warnb",onclick:()=>{
             const why=prompt("סיבת פתיחת הרשומה לעריכה:"); if(!why) return;
             S.v++; S.changes.push({t:stamp(),who:S.head.s1||"לא נבחר דוגם",label:"פתיחת רשומה נעולה",from:"נעול",to:`נפתח — ${why}`});
             S.locked=false; save();
           }},"פתח לעריכה")
-        : el("button",{class:"btn",disabled:!S.sigs.lab||!ho.labName,onclick:()=>{
+        : el("button",{class:"btn",disabled:pend.length>0,onclick:()=>{
             S.changes.push({t:stamp(),who:S.head.s1||"לא נבחר דוגם",label:"נעילת רשומה",from:"פתוח",to:"נעול"});
             S.locked=true; save();
           }},"נעל וסגור"),
       el("span",{class:"spacer"}),
-      !S.sigs.lab?el("span",{class:"pill"},"ממתין לחתימת המעבדה"):null)));
+      !S.locked && pend.length ? el("span",{class:"pill"},`ממתין ל${pend.join(" ול")}`) : null)));
 
   v.append(el("div",{class:"card"},
     el("h2",{},"הפקת קבצים"),
@@ -1237,7 +1294,7 @@ async function sketchPage(im,p,total){
 /* ---------- טופס 33.1 ---------- */
 async function renderCoc(isSplit){
   const F=F33, h=S.head, rows=isSplit?splitRows():cocRows(), tests=allTests();
-  const st=S.storage, ho=S.handover, lab=isSplit?h.labSplit:h.lab, pages=[];
+  const HK=HAND[isSplit?"split":"coc"], st=S.storage, ho=HK.ho(), lab=labName(HK.labKey), pages=[];
   const notes=[
     isSplit?"משמורת פיצול.":"",
     ...S.deviations.map((d,i)=>`חריגה ${i+1}: ${[d.what,d.why,d.who&&`אישר: ${d.who}`].filter(Boolean).join(" — ")}.`),
@@ -1281,9 +1338,9 @@ async function renderCoc(isSplit){
       if(st.tempOk==="תקין") tick(g,T.ok); else if(st.tempOk==="לא תקין") tick(g,T.bad);
 
       const D=F.hand;
-      put(g,ho.byName,D.byName,{size:7.5}); await sign(g,S.sigs.by,D.bySig);
+      put(g,ho.byName,D.byName,{size:7.5}); await sign(g,S.sigs[HK.by],D.bySig);
       put(g,fmtFull(ho.byDate),D.byDate,{size:7.5}); put(g,ho.byTime,D.byTime,{size:7.5});
-      put(g,ho.labName,D.labName,{size:7.5}); await sign(g,S.sigs.lab,D.labSig);
+      put(g,ho.labName,D.labName,{size:7.5}); await sign(g,S.sigs[HK.lab],D.labSig);
       put(g,fmtFull(ho.labDate),D.labDate,{size:7.5}); put(g,ho.labTime,D.labTime,{size:7.5});
     } else {
       put(g,h.site,F.next.site,{size:9}); put(g,lab,F.next.lab,{size:9}); put(g,fmtFull(h.date),F.next.date,{size:9});
@@ -1386,18 +1443,21 @@ const xesc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 const colName=i=>{ let s=""; for(i++;i;i=Math.floor((i-1)/26)) s=String.fromCharCode(65+(i-1)%26)+s; return s; };
 /* מספר נשמר כמספר, כדי שהיועץ יוכל לחשב ולמיין; כל השאר טקסט */
 const xnum=v=>{ const t=jv(v).trim(); return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : t; };
-/* סגנונות: 1 כותרת עמודה · 2 תא · 3 תא ממורכז · 4 תווית · 5 מספר.
+/* סגנונות: 1 כותרת עמודה · 2 תא · 3 תא ממורכז · 4 תווית · 5 מספר · 6 שורת סה״כ (מודגש, ממורכז).
    בגיליון מימין לשמאל, יישור "לימין" מציב טקסט בימין אבל מספר בשמאל — לכן למספר יישור אוטומטי */
-const XS={head:1,cell:2,mid:3,label:4,num:5};
+const XS={head:1,cell:2,mid:3,label:4,num:5,total:6};
 function xcell(v,r,c,s){
   const ref=colName(c)+(r+1);
   if(v===""||v==null) return `<c r="${ref}" s="${s}"/>`;
   if(typeof v==="number") return `<c r="${ref}" s="${s===XS.cell?XS.num:s}"><v>${v}</v></c>`;
   return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`;
 }
-/* גיליון: rows — מערכי תאים, styles(r,c) — מספר סגנון. table — שורת כותרת קפואה וסינון */
-function sheetXml({rows,widths,styles,table}){
-  const last=colName(widths.length-1)+rows.length;
+/* גיליון: rows — מערכי תאים, styles(r,c) — מספר סגנון. table — שורת כותרת קפואה וסינון.
+   filterRows — כמה שורות (כולל הכותרת) בטווח הסינון, כדי ששורת הסה״כ שמתחת לטבלה לא תמוין ותסונן איתה */
+const filterEnd = s => s.filterRows || s.rows.length;
+function sheetXml(s){
+  const {rows,widths,styles,table}=s;
+  const last=colName(widths.length-1)+rows.length, fend=colName(widths.length-1)+filterEnd(s);
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
     `<dimension ref="A1:${last}"/>`+
@@ -1406,13 +1466,13 @@ function sheetXml({rows,widths,styles,table}){
     '<sheetFormatPr defaultRowHeight="15"/>'+
     '<cols>'+widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("")+'</cols>'+
     '<sheetData>'+rows.map((row,r)=>`<row r="${r+1}">${row.map((v,c)=>xcell(v,r,c,styles(r,c))).join("")}</row>`).join("")+'</sheetData>'+
-    (table&&rows.length>1?`<autoFilter ref="A1:${last}"/>`:'')+
+    (table&&filterEnd(s)>1?`<autoFilter ref="A1:${fend}"/>`:'')+
     '</worksheet>';
 }
 function workbookBlob(sheets){
   const ns='xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
-  const filters=sheets.map((s,i)=>s.table&&s.rows.length>1
-    ?`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xesc(s.name)}'!$A$1:$${colName(s.widths.length-1)}$${s.rows.length}</definedName>`:"").join("");
+  const filters=sheets.map((s,i)=>s.table&&filterEnd(s)>1
+    ?`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xesc(s.name)}'!$A$1:$${colName(s.widths.length-1)}$${filterEnd(s)}</definedName>`:"").join("");
   const files=[
     {name:"[Content_Types].xml", data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
@@ -1443,12 +1503,13 @@ function workbookBlob(sheets){
       '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'+
         '<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders>'+
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
-      '<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
+      '<cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
         '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'+
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>'+
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+
         '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>'+
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>'+
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+
       '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'},
     ...sheets.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`, data:sheetXml(s)}))
   ];
@@ -1456,14 +1517,21 @@ function workbookBlob(sheets){
 }
 
 const TOOL_WORD={"ליינר":"שרוול","שרוול":"שרוול","צנצנת":"צנצנת"};
-/* טבלת דגימות: הכותרות כמו בטופס, המספרים ממורכזים */
-function tableSheet(name,head,rows,widths,wide){
-  return {name,widths,table:true,rows:[head,...rows],
-    styles:(r,c)=>r===0?XS.head:(wide.has(c)?XS.cell:XS.mid)};
+/* טבלת דגימות: הכותרות כמו בטופס, המספרים ממורכזים.
+   totals — שורת סה״כ אחרי שורה ריקה, מחוץ לטווח הסינון */
+function tableSheet(name,head,rows,widths,wide,totals){
+  const filterRows=1+rows.length;
+  return {name,widths,table:true,filterRows,rows:totals?[head,...rows,[],totals]:[head,...rows],
+    styles:(r,c)=>r===0?XS.head:(r>filterRows?XS.total:(wide.has(c)?XS.cell:XS.mid))};
 }
 function workbookSheets(){
-  const h=S.head, st=S.storage, ho=S.handover, yn=x=>x?"כן":"לא";
+  const h=S.head, st=S.storage, yn=x=>x?"כן":"לא";
   const when=(d,t)=>[fmtFull(d),t].filter(Boolean).join(" ");
+  const split=splitRows().length>0;
+  /* מסירה וקבלה — למשמורת, ולפיצול כשיש (מעבדה אחרת) */
+  const hand=kind=>{ const H=HAND[kind], ho=H.ho(), pre=kind==="split"?"פיצול — ":"";
+    return [[pre+"נמסר ע״י",[ho.byName,when(ho.byDate,ho.byTime)].filter(Boolean).join(" · ")],
+            [pre+"התקבל במעבדה ע״י",[ho.labName,when(ho.labDate,ho.labTime)].filter(Boolean).join(" · ")]]; };
   const dev=S.deviations.map((d,i)=>`${i+1}. ${[d.what,d.why,d.who&&`אישר: ${d.who}`].filter(Boolean).join(" — ")}`).join("\n");
   const details=[
     ["אתר",h.site],["כתובת",h.address],["תאריך",fmtFull(h.date)],
@@ -1472,15 +1540,14 @@ function workbookSheets(){
     ["כלי קידוח",h.rig==="אחר"?h.rigOther:h.rig],["מכשיר PID",h.pid],["PID באוויר הפתוח (ppm)",xnum(h.pidOpen)],
     ["שעת הגעה",h.arrive],["שעת סיום",h.finish],["טמפ׳ תחילת הדיגום (°C)",xnum(h.tStart)],["טמפ׳ סוף הדיגום (°C)",xnum(h.tEnd)],
     ["מזג האוויר",jv(h.weather)],["יעוד הקרקע",h.landuse],["מפלס מי תהום משוער (מ׳)",xnum(h.gwl)],
-    ["עבודה בהסמכה",yn(h.accredited)],["מעבדה",h.lab],
-    ...(splitRows().length?[["מעבדה משנית (פיצול)",h.labSplit]]:[]),
+    ["עבודה בהסמכה",yn(h.accredited)],["מעבדה",labName("lab")],
+    ...(split?[["מעבדה משנית (פיצול)",labName("labSplit")]]:[]),
     ["קידוח ע״י קבלן משנה",yn(h.subDrill)],["דיגום ע״י קבלן משנה",yn(h.subSample)],
     ["חריגות",dev||"אין"],
     ["אחסון לפני מסירה",st.place?`${st.place}, אחראי: ${st.keeper||""} · ${when(st.fromD,st.fromT)} עד ${when(st.toD,st.toT)} · ${st.tempOk||""}`:""],
-    ["נמסר ע״י",[ho.byName,when(ho.byDate,ho.byTime)].filter(Boolean).join(" · ")],
-    ["התקבל במעבדה ע״י",[ho.labName,when(ho.labDate,ho.labTime)].filter(Boolean).join(" · ")],
+    ...hand("coc"), ...(split?hand("split"):[]),
     ["הערות — יומן שדה",h.notesLog],["הערות — שרשרת משמורת",h.notesCoc],
-    ...(splitRows().length?[["הערות — משמורת פיצול",h.notesSplit]]:[])
+    ...(split?[["הערות — משמורת פיצול",h.notesSplit]]:[])
   ].map(([k,v])=>[k,v==null?"":v]);
   const sheets=[{name:"פרטי יום הדיגום",widths:[28,70],rows:details,table:false,
     styles:(r,c)=>c===0?XS.label:XS.cell}];
@@ -1492,14 +1559,20 @@ function workbookSheets(){
     [10,14,10,8,22,14,7,8,12,10,30], new Set([4,10])));
 
   const tests=allTests();
-  const coc=(name,rows,isSplit)=>tableSheet(name,
-    ["זיהוי דגימה","עומק (מטר)","שעת דיגום","כלי דיגום","מספר אריזות","סוג דגימה",...tests,"PID (ppm)","הערות"],
-    rows.map(s=>{ const bag=isSplit?s.sp:s;
-      return [s.name,xnum(s.depth),s.time,TOOL_WORD[bag.tool]||bag.tool,xnum(bag.packs),bag.stype,
-        ...tests.map(t=>bag.tests.includes(t)?"V":""),xnum(s.pid),isSplit?bag.note:s.cocNote]; }),
-    [14,10,9,9,8,9,...tests.map(()=>9),10,30], new Set([tests.length+7]));
+  /* שורת סה״כ: כמות אנליזות מכל סוג מתחת לעמודה שלה, והסך הכול בעמודת ההערות */
+  const coc=(name,rows,isSplit)=>{
+    const bag=s=>isSplit?s.sp:s, per=tests.map(t=>rows.filter(s=>bag(s).tests.includes(t)).length);
+    const sum=per.reduce((a,b)=>a+b,0);
+    return tableSheet(name,
+      ["זיהוי דגימה","עומק (מטר)","שעת דיגום","כלי דיגום","מספר אריזות","סוג דגימה",...tests,"PID (ppm)","הערות"],
+      rows.map(s=>{ const b=bag(s);
+        return [s.name,xnum(s.depth),s.time,TOOL_WORD[b.tool]||b.tool,xnum(b.packs),b.stype,
+          ...tests.map(t=>b.tests.includes(t)?"V":""),xnum(s.pid),isSplit?b.note:s.cocNote]; }),
+      [14,10,9,9,8,9,...tests.map(()=>9),10,30], new Set([tests.length+7]),
+      ["סה״כ אנליזות","","","","","",...per,"",`${sum} אנליזות ${rows.length===1?"בדגימה אחת":`ב-${rows.length} דגימות`}`]);
+  };
   sheets.push(coc("שרשרת משמורת",cocRows(),false));
-  if(splitRows().length) sheets.push(coc("משמורת פיצול",splitRows(),true));
+  if(split) sheets.push(coc("משמורת פיצול",splitRows(),true));
   return sheets;
 }
 const buildXlsx=()=>workbookBlob(workbookSheets());

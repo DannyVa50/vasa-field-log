@@ -42,15 +42,16 @@ Planned operation: two drilling rigs plus a vacuum truck and 2–3 samplers, in 
 3. **Chain of custody** (tabs "שרשרת משמורת" and "משמורת פיצול", form 33.1).
    - Ticked samples arrive with name, depth, time and PID already filled.
    - Per sample: sampling tool (jar / liner), number of containers, type (grab is the default, or composite), and which analyses (7 fixed columns plus up to 5 user-named ones).
-   - Lab name and notes.
+   - Lab and notes. The lab is picked from the list (בקטוכם, אלכם, אמינולאב, מכון הנפט) or "אחר" with a typed name. The split goes to a **different lab** than the main custody.
 4. **Sketch**: required for stockpile and verification sampling (work instruction 30001 §7c). Draw it on screen or photograph a paper sketch.
 5. **End of day**: finish time, end temperature, field-log notes.
 6. **Deviations, storage, handover** (tab "מסירה וקבצים"):
    - Deviations from the sampling plan: what changed, why it was needed, who approved.
    - Overnight storage, with the 4±2 °C check.
    - Handed over by (name, date, time, signature).
-   - Received at the lab by (name, date, time, signature).
-   - **Lock**: possible only after the lab signs. Reopening a locked record requires a reason, which is logged.
+   - Received at the lab: lab (from the list), representative, date, time and signature.
+   - When there are split samples: a **separate handover and lab receipt for the split**, signed by the secondary lab's representative.
+   - **Lock**: possible only after every lab that received samples has signed. Reopening a locked record requires a reason, which is logged.
 7. **Files**: PDF field log, PDF chain of custody, PDF split custody, client Excel. Or **שליחה במייל**: pick the files and an email opens with them attached.
 
 ## The two forms
@@ -73,7 +74,7 @@ The PDFs are the official forms themselves. The blank pages of the Word forms in
 - **Storage before handover**, then **handover** and **lab receipt** with signatures.
 - **"*** סוף דו"ח ***"** (end of report) must end every chain of custody, on its last page.
 - The **ISRAC accreditation logo** is printed only when the job is accredited.
-- The **split custody** is the same form, with the split samples and the secondary lab.
+- The **split custody** is the same form, with the split samples, the secondary lab, and the split's own handover and lab receipt.
 
 ## Rules from work instruction 30001 that the app enforces or prompts
 
@@ -113,7 +114,9 @@ The PDFs are the official forms themselves. The blank pages of the Word forms in
 | חזרה / פיצול | duplicate / split | `qcNeeded()` |
 | חריגות ותוספות | deviations and additions | `S.deviations` |
 | אחסון לפני מסירה | storage before handover | `S.storage` |
+| מעבדה / מעבדה משנית | lab / secondary (split) lab | `head.lab`, `head.labSplit` (+ `…Other`), `LABS`, `labName()` |
 | מסירה / קבלה במעבדה | handover / lab receipt | `S.handover`, `sigs.by`, `sigs.lab` |
+| מסירה / קבלה — פיצול | split handover / receipt | `S.handoverSplit`, `sigs.bySplit`, `sigs.labSplit`, `HAND.split` |
 | שרטוט | sketch | `S.sketch` (drawn), `S.sketchPhoto` (photo) |
 | תיעוד שינויים | change log | `S.changes`, `logChange` |
 | נעילה | lock | `S.locked` |
