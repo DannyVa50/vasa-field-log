@@ -2,6 +2,13 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 17.10.2026 — Labs, split handover, analysis totals
+
+- **Lab pick list** (Danny): בקטוכם, אלכם, אמינולאב, מכון הנפט, or "אחר" with a typed name. It applies to both the main lab and the secondary (split) lab. It is shown in the handover tab and in the custody tabs, and both are the same field. Records with a free-text lab from before the list open as "אחר" with that name, so the printed name doesn't change.
+- **The split custody gets its own handover and lab receipt** (Danny): splits go to a different lab, whose representative signs separately. The split's PDF prints the split handover and signatures. The main custody keeps its fields and change-log labels unchanged.
+- **Locking requires every lab that received samples to have signed**: the main lab, plus the split lab when there are splits. The lock moved to its own card, "נעילת הרשומה", after the receipts. This was an engineering choice that follows from the separate receipts. Reopening with a reason still works if the split lab signs after locking.
+- **Excel: analysis totals per type** (Danny): a "סה״כ אנליזות" row under each custody sheet, kept out of the filter range.
+
 ## 17.10.2026 — From prototype to field app
 
 - **Installable PWA hosted on GitHub Pages; the repo is made public** (Danny). Before this, the app was copied via an external SSD to the iPad and opened in Documents by Readdle every time. The considered alternatives were:

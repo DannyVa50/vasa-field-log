@@ -32,14 +32,17 @@ There is one global, `S`: the **open sampling day** (a "record"). The shape come
     s1, s2, approver, arrive, finish, tStart, tEnd,
     accredited: true, ready5556, cooled: true, subDrill, subSample, calLab, cal100,
     guideSurvey, guidePiles, planApproved, planShown,
-    dayLetter: "A", lab, labSplit, extraTests: ["","","","",""],
+    dayLetter: "A",
+    lab, labOther, labSplit, labSplitOther,   // a name from LABS or "אחר" + the typed name; use labName(key)
+    extraTests: ["","","","",""],
     notesLog, notesCoc, notesSplit
   },
   samples: [ blankSample() ... ],   // the field-log rows
   deviations: [ {what, why, who} ],
   storage:  { place, keeper, fromD, fromT, toD, toT, tempOk /* "תקין" | "לא תקין" | "" */ },
-  handover: { byName, byDate, byTime, labName, labDate, labTime },
-  sigs:     { s1, s2, by, lab },    // PNG data URLs
+  handover:      { byName, byDate, byTime, labName, labDate, labTime },   // chain of custody → main lab
+  handoverSplit: { byName, byDate, byTime, labName, labDate, labTime },   // split custody → secondary lab
+  sigs:     { s1, s2, by, lab, bySplit, labSplit },    // PNG data URLs
   sketch: "",                       // PNG data URL (drawn on screen)
   sketchPhoto: "",                  // JPEG data URL (photo of a paper sketch, max 1000 px, q 0.6)
   changes: [ {t, who, label, from, to} ]
@@ -58,7 +61,23 @@ A sample (`blankSample()`):
 
 `extra` and `qc` exist on samples but no UI uses them yet. The open analysis names are per day (`head.extraTests`), and a sample's `tests` array holds analysis **names**: both the fixed `TESTS` and the day's extra names.
 
-**`normalize(d)`** upgrades any stored record to the current shape. It merges `d` over `blankDay()`, pads `extraTests` to 5, and maps old analysis names through `TEST_OLD`. Every record loaded from storage goes through it, so **new fields must have defaults in `blankDay()` / `blankSample()`**.
+**`normalize(d)`** upgrades any stored record to the current shape:
+- It merges `d` over `blankDay()`, including the nested `head`, `storage`, `handover`, `handoverSplit` and `sigs`.
+- It pads `extraTests` to 5 and maps old analysis names through `TEST_OLD`.
+- It moves a free-text lab name that isn't in `LABS` (from versions before the lab list) to `"אחר"` + `labOther` / `labSplitOther`, so the printed name doesn't change.
+
+Every record loaded from storage goes through it, so **new fields must have defaults in `blankDay()` / `blankSample()`**.
+
+**Labs:** `LABS` is the pick list. `labPicker(key, label)` is a select plus a free-text input when "אחר" is chosen. It is used for the same field in both the custody tab and the handover tab. `labName("lab" | "labSplit")` returns the name to print or export.
+
+**Handover per lab:** the chain of custody and the split custody go to different labs, so each has its own handover, lab receipt and signatures. `HAND.coc` / `HAND.split` map each to its data:
+- the handover object: `S.handover` / `S.handoverSplit`
+- signature keys: `by`, `lab` / `bySplit`, `labSplit`
+- the head lab key
+- change-log key prefixes: `ho.` / `hs.`
+- the label prefix (`"פיצול — "`)
+
+The main custody keeps its pre-split labels and keys, so its change log continues unbroken. `handCards(kind)` renders the two cards. The split cards appear only when there are split samples.
 
 Derived values: `cocRows()` (samples with `toCoc`), `splitRows()` (samples with `toSplit`), `allTests()` (fixed + named extras), and `qcNeeded()` (see [domain.md](domain.md)).
 
@@ -83,7 +102,7 @@ The app keeps a change log because the records are accredited quality records. T
 
 Setters that log: `setHead(k, v, label)`, `setSub(obj, k, v, label, key)`, `setSample(sm, k, v, label)`, `setSplit(sm, k, v, label)`, and `setColor`. Use them for any new field.
 
-**Lock:** "נעל וסגור" is enabled only when the lab representative has signed and is named. A locked record is read-only. "פתח לעריכה" asks for a reason, bumps `S.v`, logs the reopening, and unlocks.
+**Lock** (its own card, "נעילת הרשומה"): "נעל וסגור" is enabled only when every lab that received samples has signed and its representative is named. That means the main lab always, and the split lab too when there are split samples (`labSigned`, `pendingLabs`). A locked record is read-only. "פתח לעריכה" asks for a reason, bumps `S.v`, logs the reopening, and unlocks.
 
 ## Records and storage
 
@@ -130,7 +149,7 @@ The app began as a Claude artifact, where `claude.use("db")` provided a shared d
    - `pageCount` comes from the row counts (`per`). A single page whose notes don't fit gets a continuation page.
    - `flowNotes` flows note words into the first page's note lines, then the last page's.
    - `pageMarks` writes "page X of Y" and renumbers the margin row numbers.
-5. `renderLog()` covers form 57, with the sketch as an extra counted page (`sketchPage`). `renderCoc(isSplit)` covers form 33.1, including the "*** סוף דו"ח ***" placement rules and the ISRAC logo.
+5. `renderLog()` covers form 57, with the sketch as an extra counted page (`sketchPage`). `renderCoc(isSplit)` covers form 33.1, including the "*** סוף דו"ח ***" placement rules and the ISRAC logo. For the split copy, it prints the secondary lab, the split handover and the split signatures (`HAND.split`). Inside the page-1 block, `H` is the header-box table (`F.head`), so the handover mapping is named `HK`. Don't reuse `H` there.
 6. `canvasJpeg` (q 0.9) → `pdfFromJpegs(pages)`: a minimal hand-written PDF 1.4 with one full-page JPEG image per page. **The text is not searchable or selectable.** This is a known, accepted trade-off.
 
 Printed codes follow the form's legend: tool 1 = liner/sleeve, 2 = jar (`TOOL_CODE`); type ח = grab, מ = composite (`STYPE_CODE`). The PDF font is `Arial, "Arial Hebrew"`, which is present on iPad and Windows.
@@ -143,6 +162,8 @@ Printed codes follow the form's legend: tool 1 = liner/sleeve, 2 = jar (`TOOL_CO
 
 - Office Open XML parts with inline strings, packed by `zipBlob()` (zip "stored" method, CRC-32 in `crc32`).
 - Sheets: day details (key/value), field log, chain of custody, and split custody (only when there are split samples).
+- The details sheet lists the lab, the handover and the lab receipt for each custody. The split ones are prefixed "פיצול — ".
+- **Analysis totals:** each custody sheet ends, after a blank row, with a "סה״כ אנליזות" row. It holds the count of each analysis under its column, and the total plus the number of samples in the notes column. The row sits **outside** the autofilter range (`filterRows`), so sorting or filtering doesn't move it. The style is 6 (`XS.total`).
 - All sheets are `rightToLeft`. Table sheets have a frozen header row and an autofilter.
 - `xnum()` stores numeric strings as numbers.
 - Style 5 (`XS.num`) gives numbers **general** alignment, because in an RTL sheet `horizontal="right"` puts numbers on the left (verified in Excel).
