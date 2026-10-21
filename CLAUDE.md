@@ -23,7 +23,7 @@ Search for the `/* ============ … ============ */` section banners, in this or
 
 - **reference data**: dropdown lists (samplers, PID serials, soil types…), the fixed analyses `TESTS`, and `PID_HOT`
 - **change log**, then **records**, **persistence** (localStorage + optional remote db)
-- **derived** (`cocRows`, `splitRows`, `qcNeeded`), then **DOM helpers** (`el`, `field`, `txt`, `sel`, `multi`, `toggle`), then the **signature pad**
+- **derived** (`cocRows`, `splitRows`, `custodyRows` — every form-33.1 row incl. free rows and duplicates, `hasSplit`, `qcNeeded`), then **DOM helpers** (`el`, `field`, `txt`, `sel`, `multi`, `toggle`), then the **signature pad**
 - views: `viewDay`, `sketchCard`, `viewLog`, `custodyView` (main + split), `viewHand`, `viewHist`, `viewDocs`
 - **PDF**: `F57` / `F33` coordinate tables, `renderLog`, `renderCoc`, `pdfFromJpegs`, `buildPdf`
 - **Excel**: `workbookSheets`, `workbookBlob`, `zipBlob`, `buildXlsx`
