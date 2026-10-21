@@ -111,6 +111,14 @@ td.mono input,.mono{font-family:"IBM Plex Mono",monospace; font-weight:500; font
 td.rownum{color:var(--ink-2); font-family:"IBM Plex Mono",monospace; font-size:12px; text-align:center; width:36px}
 tr.hot td.rownum{color:var(--warn); font-weight:700}
 tr.hot{background:var(--warn-soft)}
+/* משמורת: לחיצה ארוכה על שורה = חזרה. הרקע מתמלא במשך 3 השניות, כדי שהדוגם יידע להמשיך להחזיק */
+tr.lp td{-webkit-user-select:none; user-select:none; -webkit-touch-callout:none}
+tr.lp td input{-webkit-user-select:text; user-select:text}
+tr.pressing{background:var(--accent-soft); transition:background 3s linear}
+tr.xrow{background:var(--sunk)}
+tr.fresh td{border-top:3px solid var(--accent); border-bottom:3px solid var(--accent)}
+.rowdel{border:0; background:none; color:var(--danger); font-size:17px; font-weight:700; cursor:pointer; min-width:30px; min-height:30px; padding:0}
+.rowdel:disabled{opacity:.35; cursor:default}
 .w-xs{width:64px} .w-s{width:84px} .w-m{width:112px} .w-l{width:158px} .w-xl{width:200px}
 .tickcell{text-align:center; width:48px}
 .tick{width:30px; height:30px; border:2px solid var(--line); border-radius:6px; background:var(--surface); cursor:pointer; padding:0; line-height:1; font-size:16px; font-weight:700; color:transparent}
@@ -276,6 +284,14 @@ function blankSample(boring){
     auto:["stype","sp.stype"]};
 }
 
+/* שורה שקיימת רק בשרשרת המשמורת (או בפיצול), ולא ביומן השדה:
+   dup:false — שורה שהדוגם הוסיף ומילא חופשי; dup:true — חזרה (בקרת איכות) של שורה אחרת.
+   after — מזהה השורה שהחזרה מוצגת מתחתיה; "" — בסוף הטבלה */
+function blankExtra(){
+  return {id:crypto.randomUUID(), dup:false, after:"", name:"", depth:"", time:"", pid:"", dayLetter:"",
+    tool:"", packs:"", stype:"חטף", tests:[], note:"", auto:["stype"]};
+}
+
 const newId = () => `day-${todayISO()}-${crypto.randomUUID().slice(0,8)}`;
 
 function blankDay(id){
@@ -293,6 +309,7 @@ function blankDay(id){
       notesLog:"", notesCoc:"", notesSplit:""
     },
     samples:[blankSample()], deviations:[],
+    cocExtra:[], splitExtra:[],
     storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
     /* הפיצולים נמסרים למעבדה אחרת — מסירה וקבלה נפרדות, וחתימות bySplit / labSplit */
     handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
@@ -323,6 +340,8 @@ function normalize(d){
     return m;
   });
   if(!n.samples.length) n.samples=[blankSample()];
+  for(const k of ["cocExtra","splitExtra"])
+    n[k]=(Array.isArray(d[k])?d[k]:[]).map(e=>{ const m={...blankExtra(), ...e}; m.tests=tests(m.tests); return m; });
   if(!n.id) n.id="day-"+n.head.date;
   return n;
 }
@@ -377,6 +396,12 @@ function setSplit(sm,k,v,label){
   if(sm.auto.includes("sp."+k)) sm.auto=sm.auto.filter(x=>x!=="sp."+k);
   else logChange(`פיצול — ${label} · ${sm.name||"דגימה"}`, sm.sp[k], v, sm.id+".sp."+k);
   sm.sp[k]=v; save();
+}
+/* שורה שנוספה במשמורת. ערכים שהועתקו לחזרה מסומנים ב-auto, כמו בשורה חדשה ביומן */
+function setExtra(e,k,v,label,isSplit){
+  if(e.auto.includes(k)) e.auto=e.auto.filter(x=>x!==k);
+  else logChange(`${isSplit?"פיצול — ":""}${label} · ${e.name||"שורה חדשה"}`, e[k], v, e.id+"."+k);
+  e[k]=v; save();
 }
 function setColor(sm,i,x){
   const c=[sm.color[0]||"", sm.color[1]||""]; c[i]=x;
@@ -529,13 +554,43 @@ function setPill(mode){
 }
 
 /* ============ derived ============ */
+/* דגימות היומן שסומנו למשמורת / לפיצול */
 const cocRows   = () => S.samples.filter(s=>s.toCoc);
 const splitRows = () => S.samples.filter(s=>s.toSplit);
+const extras    = isSplit => isSplit ? S.splitExtra : S.cocExtra;
+/* כל שורות טופס 33.1, בסדר ההדפסה: הדגימות מהיומן, השורות שנוספו במשמורת,
+   וכל חזרה מתחת לשורה שממנה נעשתה. חזרה שהשורה שלה ירדה מהמשמורת — בסוף.
+   לכל שורה: bag — היכן נשמרים כלי הדיגום, האריזות, הסוג והאנליזות; x — השורה הנוספת, אם זו כזו */
+function custodyRows(isSplit){
+  const fromLog=s=>{ const b=isSplit?s.sp:s;
+    return {id:s.id, src:s, x:null, bag:b, name:s.name, depth:s.depth, time:s.time, pid:s.pid,
+      dayLetter:s.dayLetter, note:isSplit?b.note:s.cocNote, dup:false}; };
+  const added=e=>({id:e.id, src:null, x:e, bag:e, name:e.name, depth:e.depth, time:e.time, pid:e.pid,
+    dayLetter:e.dayLetter, note:e.note, dup:e.dup});
+  const list=[...(isSplit?splitRows():cocRows()).map(fromLog), ...extras(isSplit).filter(e=>!e.after).map(added)];
+  let wait=extras(isSplit).filter(e=>e.after), moved=true;
+  while(wait.length && moved){
+    moved=false;
+    wait=wait.filter(e=>{
+      const at=list.findIndex(r=>r.id===e.after);
+      if(at<0) return true;
+      let j=at+1;
+      while(j<list.length && list[j].x && list[j].x.after===e.after) j++;
+      list.splice(j,0,added(e)); moved=true;
+      return false;
+    });
+  }
+  return list.concat(wait.map(added));
+}
+const hasSplit = () => custodyRows(true).length>0;
+/* חזרות ופיצולים נדרשים, לפי מספר הדגימות במשמורת (בלי החזרות עצמן) */
 function qcNeeded(){
-  const n=cocRows().length;
+  const rows=custodyRows(false), n=rows.filter(r=>!r.dup).length;
   const dup = n===0?0:(n<10?1:Math.ceil(n/20));
   const spl = n<=9?0:Math.ceil(n*0.1);
-  return {n, dup, spl, haveSpl: splitRows().length};
+  return {n, dup, spl, haveDup: rows.filter(r=>r.dup).length, haveSpl: custodyRows(true).filter(r=>!r.dup).length,
+    /* חזרה ופיצול אינם נשלחים ל-VOC ול-TPH GRO */
+    badDup: rows.filter(r=>r.dup && r.bag.tests.some(t=>/^VOC$|GRO/i.test(t.trim())))};
 }
 const allTests = () => TESTS.concat(S.head.extraTests.filter(x=>x && x.trim()));
 /* שם המעבדה להדפסה ולקבצים. key — "lab" או "labSplit" */
@@ -558,7 +613,13 @@ const field=(label,node,hint)=>el("div",{class:"f"},el("label",{},label),node,hi
 function txt(val,on,opts={}){
   const i=el("input",{type:opts.type||"text", value:val||"", placeholder:opts.ph||"",
     step:opts.type==="number"?"any":null, disabled:RO()});
-  i.addEventListener("change",()=>on(i.value));
+  if(opts.type==="time"||opts.type==="date"){
+    /* באייפד גלגלת השעה/התאריך שולחת change בכל סיבוב. שמירה בכל סיבוב בונה את המסך מחדש
+       וחלונית הגלגלת קופצת — לכן הערך נשמר רק כשהחלונית נסגרת */
+    let dirty=false;
+    i.addEventListener("change",()=>{ if(document.activeElement===i) dirty=true; else on(i.value); });
+    i.addEventListener("blur",()=>{ if(dirty){ dirty=false; on(i.value); } });
+  } else i.addEventListener("change",()=>on(i.value));
   return i;
 }
 function area(val,on){
@@ -822,39 +883,117 @@ function viewLog(){
 }
 
 /* ============ custody — shared renderer for main and split ============ */
+/* שורה שנוספה עכשיו (שורה חופשית או חזרה) — מודגשת אחרי הבנייה מחדש, כדי שהדוגם יראה אותה ויבחר אנליזות */
+let freshRow="";
+
+/* ערך בשורת משמורת: לדגימה מהיומן — לשדות שלה (במשמורת הראשית ההערה היא cocNote), ולשורה שנוספה — לשורה עצמה */
+function setRow(r,k,v,label,isSplit){
+  if(r.x) setExtra(r.x,k,v,label,isSplit);
+  else if(isSplit) setSplit(r.src,k,v,label);
+  else if(k==="note") setSample(r.src,"cocNote",v,"הערות משמורת");
+  else setSample(r.src,k,v,label);
+}
+
+function addRow(isSplit){
+  const e=blankExtra(); e.time=nowHM(); e.auto.push("time");
+  extras(isSplit).push(e); freshRow=e.id;
+  logChange(`${isSplit?"פיצול — ":""}הוספת שורה למשמורת`,"",`שורה ${custodyRows(isSplit).length}`,"add."+e.id);
+  save();
+}
+/* חזרה: שורה חדשה מתחת לשורה שנבחרה, עם כל הנתונים שלה מלבד האנליזות, ו"חזרה" אחרי מס׳ הדגימה */
+function duplicateRow(r,isSplit){
+  const e=blankExtra(), b=r.bag;
+  Object.assign(e,{dup:true, after:r.id, name:`${(r.name||"").trim()} חזרה`.trim(), depth:r.depth, time:r.time, pid:r.pid,
+    dayLetter:r.dayLetter, tool:b.tool, packs:b.packs, stype:b.stype, note:r.note, tests:[]});
+  e.auto=["name","depth","time","pid","dayLetter","tool","packs","stype","note"].filter(k=>String(e[k]??"")!=="");
+  extras(isSplit).push(e); freshRow=e.id;
+  logChange(`${isSplit?"פיצול — ":""}חזרה ל-${r.name||"דגימה"}`,"",e.name,"add."+e.id);
+  save();
+}
+/* חלונית אישור בתוך האפליקציה. לא confirm() של הדפדפן: בחלק מהסביבות הוא חסום ומחזיר "ביטול" מיד,
+   והפעולה נעצרת בלי שום הודעה */
+function askYes(title,text,yes,onYes,danger){
+  const close=()=>m.remove();
+  const m=el("div",{class:"modal",role:"dialog","aria-modal":"true",onclick:e=>{ if(e.target===m) close(); }},
+    el("div",{class:"card"},
+      el("h2",{},title),
+      el("div",{class:"sub"},text),
+      el("div",{class:"bar"},
+        el("button",{class:danger?"btn warnb":"btn",type:"button",onclick:()=>{ close(); onYes(); }},yes),
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn ghost",type:"button",onclick:close},"ביטול"))));
+  document.body.append(m);
+}
+function deleteRow(r,isSplit){
+  askYes("למחוק את השורה?", `השורה ${r.name||"ללא שם"} תימחק משרשרת המשמורת. המחיקה נרשמת בתיעוד השינויים.`,
+    "כן, למחוק", ()=>{
+      const list=extras(isSplit), i=list.indexOf(r.x);
+      if(i<0) return;
+      logChange(`${isSplit?"פיצול — ":""}מחיקת שורה ממשמורת`, r.name||"שורה ללא שם", "", "del."+r.x.id);
+      list.splice(i,1); save();
+    }, true);
+}
+
+/* "האם לבצע חזרה?" — אחרי לחיצה ארוכה על שורה */
+function askDuplicate(r,isSplit){
+  askYes("האם לבצע חזרה?", `תיפתח שורה חדשה מתחת ל-${r.name||"שורה זו"}, עם ״חזרה״ בזיהוי הדגימה. `+
+    "כל הנתונים מועתקים מלבד האנליזות — יש לבחור אותן לדגימת החזרה.",
+    "כן, לבצע חזרה", ()=>duplicateRow(r,isSplit));
+}
+
+/* לחיצה ארוכה: 3 שניות על השורה, לא על שדה או כפתור. תזוזה של האצבע (גלילה) מבטלת */
+const LONG_MS=3000;
+function longPress(tr,fn){
+  let t=null, x0=0, y0=0;
+  const stop=()=>{ clearTimeout(t); t=null; tr.classList.remove("pressing"); };
+  tr.addEventListener("pointerdown",e=>{
+    if(RO() || e.button>0 || e.target.closest("input,select,button,textarea,a")) return;
+    x0=e.clientX; y0=e.clientY; tr.classList.add("pressing");
+    t=setTimeout(()=>{ stop(); fn(); },LONG_MS);
+  });
+  tr.addEventListener("pointermove",e=>{ if(t && Math.hypot(e.clientX-x0,e.clientY-y0)>12) stop(); });
+  for(const ev of ["pointerup","pointercancel","pointerleave"]) tr.addEventListener(ev,stop);
+  tr.addEventListener("contextmenu",e=>e.preventDefault());
+}
+
 function custodyView(kind){
   const isSplit = kind==="split";
-  const rows = isSplit ? splitRows() : cocRows();
+  const rows = custodyRows(isSplit);
   const v=el("div",{}), tb=el("tbody",{}), tests=allTests();
+  let fresh=null;
 
-  rows.forEach((sm,i)=>{
-    const bag = isSplit ? sm.sp : sm;
-    const setT = (t)=>{
-      const has=bag.tests.includes(t);
-      const next=has?bag.tests.filter(x=>x!==t):[...bag.tests,t];
-      isSplit?setSplit(sm,"tests",next,"בדיקות נדרשות"):setSample(sm,"tests",next,"בדיקות נדרשות");
-    };
-    tb.append(el("tr",{},
-      el("td",{class:"rownum"},String(i+1)),
-      el("td",{class:"mono w-xs"}, sel(sm.dayLetter||S.head.dayLetter,DAYS,x=>setSample(sm,"dayLetter",x,"אות יום"),"")),
-      el("td",{class:"mono w-m"}, sm.name||"—"),
-      el("td",{class:"mono w-s"}, sm.depth||"—"),
-      el("td",{class:"mono w-s"}, sm.time||"—"),
-      el("td",{class:"w-m"}, sel(bag.tool,TOOL,x=>isSplit?setSplit(sm,"tool",x,"כלי דיגום"):setSample(sm,"tool",x,"כלי דיגום"))),
-      el("td",{class:"w-xs"}, sel(bag.packs,PACKS,x=>isSplit?setSplit(sm,"packs",x,"מספר אריזות"):setSample(sm,"packs",x,"מספר אריזות"))),
-      el("td",{class:"w-m"}, sel(bag.stype,STYPE,x=>isSplit?setSplit(sm,"stype",x,"סוג דגימה"):setSample(sm,"stype",x,"סוג דגימה"))),
+  rows.forEach((r,i)=>{
+    const b=r.bag, set=(k,val,label)=>setRow(r,k,val,label,isSplit);
+    const setT = t=>set("tests", b.tests.includes(t)?b.tests.filter(x=>x!==t):[...b.tests,t], "בדיקות נדרשות");
+    /* דגימה מהיומן: זיהוי, עומק, שעה ו-PID מגיעים מהיומן ונערכים שם. שורה שנוספה במשמורת — נערכת כאן */
+    const own=(k,label,opts)=>r.x ? txt(r[k],x=>set(k,x,label),opts) : (r[k]||"—");
+    const tr=el("tr",{class:[r.x?"xrow":"", r.dup?"":"lp", r.id===freshRow?"fresh":""].filter(Boolean).join(" ")},
+      el("td",{class:"rownum"}, String(i+1),
+        r.x?el("button",{class:"rowdel",type:"button",title:"מחיקת השורה",disabled:RO(),onclick:()=>deleteRow(r,isSplit)},"✕"):null),
+      el("td",{class:"mono w-xs"}, sel(r.dayLetter||S.head.dayLetter,DAYS,x=>set("dayLetter",x,"אות יום"),"")),
+      el("td",{class:"mono w-m"}, own("name","זיהוי דגימה")),
+      el("td",{class:"mono w-s"}, own("depth","עומק",{type:"number",ph:"מ׳"})),
+      el("td",{class:"mono w-s"}, own("time","שעת דיגום",{type:"time"})),
+      el("td",{class:"w-m"}, sel(b.tool,TOOL,x=>set("tool",x,"כלי דיגום"))),
+      el("td",{class:"w-xs"}, sel(b.packs,PACKS,x=>set("packs",x,"מספר אריזות"))),
+      el("td",{class:"w-m"}, sel(b.stype,STYPE,x=>set("stype",x,"סוג דגימה"))),
       ...tests.map(t=>el("td",{class:"tickcell"},el("button",{class:"tick",type:"button",disabled:RO(),
-        "aria-pressed":String(bag.tests.includes(t)),title:t,onclick:()=>setT(t)},"✓"))),
-      el("td",{class:"mono w-s"}, sm.pid||"—"),
-      el("td",{class:"w-xl"}, txt(bag.note!==undefined?bag.note:sm.cocNote,
-        x=>isSplit?setSplit(sm,"note",x,"הערות"):setSample(sm,"cocNote",x,"הערות משמורת")))));
+        "aria-pressed":String(b.tests.includes(t)),title:t,onclick:()=>setT(t)},"✓"))),
+      el("td",{class:"mono w-s"}, own("pid","PID",{type:"number"})),
+      el("td",{class:"w-xl"}, txt(r.note,x=>set("note",x,"הערות"))));
+    /* חזרה נעשית מדגימה, לא מחזרה */
+    if(!r.dup) longPress(tr,()=>askDuplicate(r,isSplit));
+    if(r.id===freshRow) fresh=tr;
+    tb.append(tr);
   });
+  if(fresh) requestAnimationFrame(()=>{ fresh.scrollIntoView({block:"nearest"}); });
 
   v.append(el("div",{class:"card"},
     el("h2",{},isSplit?"שרשרת משמורת — פיצול":"שרשרת משמורת"),
-    el("div",{class:"sub"},isSplit
-      ? "טופס 33.1 למעבדה המשנית · הדגימות מגיעות מעמודת ״משמורת פיצול״ ביומן השדה"
-      : "טופס 33.1 · הדגימות מגיעות מיומן השדה. עומק, שעה ו-PID עוברים אוטומטית"),
+    el("div",{class:"sub"},(isSplit
+      ? "טופס 33.1 למעבדה המשנית · הדגימות מגיעות מעמודת ״משמורת פיצול״ ביומן השדה. "
+      : "טופס 33.1 · הדגימות מגיעות מיומן השדה. עומק, שעה ו-PID עוברים אוטומטית. ")+
+      "״הוסף שורה״ — שורה למילוי חופשי. חזרה: לחיצה ארוכה (3 שניות) על שורה"),
     el("div",{class:"grid wide",style:"margin-bottom:14px"},
       labPicker(isSplit?"labSplit":"lab",isSplit?"מעבדה משנית":"מעבדה"),
       field("הערות", area(isSplit?S.head.notesSplit:S.head.notesCoc,
@@ -867,14 +1006,16 @@ function custodyView(kind){
         ...tests.map(t=>el("th",{class:"vt"},t)),
         el("th",{},"PID"), el("th",{},"הערות"))),tb))
       :el("div",{class:"empty"},isSplit
-        ? "סמן דגימות בעמודת ״משמורת פיצול״ ביומן השדה."
-        : "סמן דגימות בעמודת ״משמורת״ ביומן השדה."),
+        ? "סמן דגימות בעמודת ״משמורת פיצול״ ביומן השדה, או הוסף שורה."
+        : "סמן דגימות בעמודת ״משמורת״ ביומן השדה, או הוסף שורה."),
     el("div",{class:"bar"},
+      el("button",{class:"btn",type:"button",disabled:RO(),onclick:()=>addRow(isSplit)},"הוסף שורה"),
       el("span",{class:"pill"},`${rows.length} דגימות`),
-      el("span",{class:"pill"},`${rows.reduce((a,s)=>a+(isSplit?s.sp.tests.length:s.tests.length),0)} אנליזות`),
+      el("span",{class:"pill"},`${rows.reduce((a,r)=>a+r.bag.tests.length,0)} אנליזות`),
       el("span",{class:"spacer"}),
       el("button",{class:"btn ghost",onclick:()=>makePdf(isSplit?"split":"coc")},
         isSplit?"PDF משמורת פיצול":"PDF שרשרת משמורת"))));
+  freshRow="";
 
   v.append(el("div",{class:"card"},
     el("h2",{},"עמודות אנליזה פתוחות"),
@@ -885,14 +1026,17 @@ function custodyView(kind){
           {ph:"שם האנליזה"}))))));
 
   if(!isSplit && rows.length){
-    const q=qcNeeded(), ok=q.haveSpl>=q.spl;
+    const q=qcNeeded(), ok=q.haveDup>=q.dup && q.haveSpl>=q.spl && !q.badDup.length;
+    const missing=[q.haveDup<q.dup&&"חזרות", q.haveSpl<q.spl&&"פיצולים"].filter(Boolean).join(" ו");
     v.append(el("div",{class:"card"},
       el("h2",{},"בקרות איכות"),
       el("div",{class:"sub"},"הערה בסוף העבודה — אינה חוסמת"),
       el("div",{class:ok?"note":"note warn"},
-        ok?null:el("b",{},"חסרים פיצולים. "),
-        `לפי ${q.n} דגימות נדרשות ${q.dup} חזרות ו-${q.spl} פיצולים (סומנו ${q.haveSpl} פיצולים). `,
-        "החזרות אינן מסומנות באפליקציה — יש לוודא אותן. חזרה ופיצול אינם נשלחים ל-VOC ול-TPH GRO.")));
+        missing?el("b",{},`חסרים ${missing}. `):null,
+        `לפי ${q.n} דגימות נדרשות ${q.dup} חזרות ו-${q.spl} פיצולים (סומנו ${q.haveDup} חזרות ו-${q.haveSpl} פיצולים). `,
+        "חזרה — לחיצה ארוכה על שורה. פיצול — עמודת ״פיצול״ ביומן השדה. חזרה ופיצול אינם נשלחים ל-VOC ול-TPH GRO.",
+        q.badDup.length?el("div",{style:"margin-top:6px"},el("b",{},"לבדוק: "),
+          `${q.badDup.map(r=>r.name||"חזרה").join(", ")} — סומנו ל-VOC או ל-TPH GRO.`):null)));
   }
   return v;
 }
@@ -908,7 +1052,7 @@ const HAND={
 /* הרשומה שלמה כשכל מעבדה שקיבלה דגימות חתמה ונרשם שם הנציג */
 const labSigned = kind => { const H=HAND[kind]; return !!(S.sigs[H.lab] && H.ho().labName); };
 const pendingLabs = () => [!labSigned("coc") && "חתימת המעבדה",
-  splitRows().length && !labSigned("split") && "חתימת מעבדת הפיצול"].filter(Boolean);
+  hasSplit() && !labSigned("split") && "חתימת מעבדת הפיצול"].filter(Boolean);
 
 /* סיום האחסון הוא ברירת המחדל למסירה ולקבלה במעבדה. שדה שמולא ידנית בערך אחר אינו נדרס */
 const HAND_FROM_STORAGE={
@@ -917,7 +1061,7 @@ const HAND_FROM_STORAGE={
 function storageEnd(k,v){
   const st=S.storage, old=st[k];
   setSub(st,k,v,k==="toD"?"סיום אחסון":"שעת סיום אחסון","st."+k);
-  for(const kind of splitRows().length?["coc","split"]:["coc"]){
+  for(const kind of hasSplit()?["coc","split"]:["coc"]){
     const H=HAND[kind], ho=H.ho();
     for(const [f,label] of HAND_FROM_STORAGE[k])
       if(!ho[f] || ho[f]===old) setSub(ho,f,v,H.pre+label,H.key+f);
@@ -984,13 +1128,13 @@ function viewHand(){
       el("b",{},"נדרש טופס חריגים. "),"יש לתעד את החריגה גם בהערות המשמורת — סעיף 8."):null));
 
   v.append(...handCards("coc"));
-  if(splitRows().length) v.append(...handCards("split"));
+  if(hasSplit()) v.append(...handCards("split"));
 
   /* נעילה — רק אחרי שכל מעבדה שקיבלה דגימות חתמה */
   const pend=pendingLabs();
   v.append(el("div",{class:"card"},
     el("h2",{},"נעילת הרשומה"),
-    el("div",{class:"sub"},splitRows().length
+    el("div",{class:"sub"},hasSplit()
       ? "אחרי חתימת המעבדה ומעבדת הפיצול. רשומה נעולה אינה ניתנת לעריכה, ופתיחה מחדש דורשת סיבה ונרשמת"
       : "אחרי חתימת המעבדה. רשומה נעולה אינה ניתנת לעריכה, ופתיחה מחדש דורשת סיבה ונרשמת"),
     el("div",{class:"bar",style:"margin-top:0"},
@@ -1293,7 +1437,7 @@ async function sketchPage(im,p,total){
 
 /* ---------- טופס 33.1 ---------- */
 async function renderCoc(isSplit){
-  const F=F33, h=S.head, rows=isSplit?splitRows():cocRows(), tests=allTests();
+  const F=F33, h=S.head, rows=custodyRows(isSplit), tests=allTests();
   const HK=HAND[isSplit?"split":"coc"], st=S.storage, ho=HK.ho(), lab=labName(HK.labKey), pages=[];
   const notes=[
     isSplit?"משמורת פיצול.":"",
@@ -1345,13 +1489,13 @@ async function renderCoc(isSplit){
     } else {
       put(g,h.site,F.next.site,{size:9}); put(g,lab,F.next.lab,{size:9}); put(g,fmtFull(h.date),F.next.date,{size:9});
     }
-    rows.slice(start,start+F.per[p?1:0]).forEach((s,i)=>{
-      const bag=isSplit?s.sp:s, o={size:8,align:"center"};
-      const cells=[s.name,s.depth,s.time,TOOL_CODE[bag.tool]||bag.tool,bag.packs,STYPE_CODE[bag.stype]||bag.stype];
+    rows.slice(start,start+F.per[p?1:0]).forEach((r,i)=>{
+      const bag=r.bag, o={size:8,align:"center"};
+      const cells=[r.name,r.depth,r.time,TOOL_CODE[bag.tool]||bag.tool,bag.packs,STYPE_CODE[bag.stype]||bag.stype];
       cells.forEach((v,j)=>put(g,v,rowBox(F,p,i,F.cols[j]),o));
       tests.forEach((t,j)=>{ if(bag.tests.includes(t)) tick(g,rowBox(F,p,i,testBox(j)),3.4); });
-      put(g,s.pid,rowBox(F,p,i,F.pid),o);
-      put(g,isSplit?bag.note:s.cocNote,rowBox(F,p,i,F.note),{size:7.5});
+      put(g,r.pid,rowBox(F,p,i,F.pid),o);
+      put(g,r.note,rowBox(F,p,i,F.note),{size:7.5});
     });
   }
   writeNotes(F,pages,n,notes);
@@ -1527,7 +1671,7 @@ function tableSheet(name,head,rows,widths,wide,totals){
 function workbookSheets(){
   const h=S.head, st=S.storage, yn=x=>x?"כן":"לא";
   const when=(d,t)=>[fmtFull(d),t].filter(Boolean).join(" ");
-  const split=splitRows().length>0;
+  const split=hasSplit();
   /* מסירה וקבלה — למשמורת, ולפיצול כשיש (מעבדה אחרת) */
   const hand=kind=>{ const H=HAND[kind], ho=H.ho(), pre=kind==="split"?"פיצול — ":"";
     return [[pre+"נמסר ע״י",[ho.byName,when(ho.byDate,ho.byTime)].filter(Boolean).join(" · ")],
@@ -1560,19 +1704,19 @@ function workbookSheets(){
 
   const tests=allTests();
   /* שורת סה״כ: כמות אנליזות מכל סוג מתחת לעמודה שלה, והסך הכול בעמודת ההערות */
-  const coc=(name,rows,isSplit)=>{
-    const bag=s=>isSplit?s.sp:s, per=tests.map(t=>rows.filter(s=>bag(s).tests.includes(t)).length);
+  const coc=(name,rows)=>{
+    const bag=r=>r.bag, per=tests.map(t=>rows.filter(r=>bag(r).tests.includes(t)).length);
     const sum=per.reduce((a,b)=>a+b,0);
     return tableSheet(name,
       ["זיהוי דגימה","עומק (מטר)","שעת דיגום","כלי דיגום","מספר אריזות","סוג דגימה",...tests,"PID (ppm)","הערות"],
-      rows.map(s=>{ const b=bag(s);
-        return [s.name,xnum(s.depth),s.time,TOOL_WORD[b.tool]||b.tool,xnum(b.packs),b.stype,
-          ...tests.map(t=>b.tests.includes(t)?"V":""),xnum(s.pid),isSplit?b.note:s.cocNote]; }),
+      rows.map(r=>{ const b=bag(r);
+        return [r.name,xnum(r.depth),r.time,TOOL_WORD[b.tool]||b.tool,xnum(b.packs),b.stype,
+          ...tests.map(t=>b.tests.includes(t)?"V":""),xnum(r.pid),r.note]; }),
       [14,10,9,9,8,9,...tests.map(()=>9),10,30], new Set([tests.length+7]),
       ["סה״כ אנליזות","","","","","",...per,"",`${sum} אנליזות ${rows.length===1?"בדגימה אחת":`ב-${rows.length} דגימות`}`]);
   };
-  sheets.push(coc("שרשרת משמורת",cocRows(),false));
-  if(split) sheets.push(coc("משמורת פיצול",splitRows(),true));
+  sheets.push(coc("שרשרת משמורת",custodyRows(false)));
+  if(split) sheets.push(coc("משמורת פיצול",custodyRows(true)));
   return sheets;
 }
 const buildXlsx=()=>workbookBlob(workbookSheets());
@@ -1617,8 +1761,8 @@ function exportJson(){
    בלי תמיכה בשיתוף קבצים (למשל Firefox במחשב): הורדת כל קובץ, ומייל שנפתח עם הנושא והגוף */
 const MAIL_KINDS=[
   {kind:"log",   label:"יומן שדה — PDF",           def:()=>true},
-  {kind:"coc",   label:"שרשרת משמורת — PDF",       def:()=>cocRows().length>0},
-  {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:()=>splitRows().length>0},
+  {kind:"coc",   label:"שרשרת משמורת — PDF",       def:()=>custodyRows(false).length>0},
+  {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:hasSplit},
   {kind:"xlsx",  label:"Excel ללקוח",              def:()=>false}
 ];
 async function mailFile(kind){
@@ -1629,8 +1773,8 @@ async function mailFile(kind){
 function mailText(names){
   const h=S.head, site=(h.site||"").trim()||"ללא שם אתר";
   const subject=`מסמכי יום דיגום — ${site} — ${fmtFull(h.date)}`;
-  const counts=[`${meta(S).n} ביומן השדה`, `${cocRows().length} למשמורת`,
-    splitRows().length?`${splitRows().length} לפיצול`:""].filter(Boolean).join(", ");
+  const nc=custodyRows(false).length, ns=custodyRows(true).length;
+  const counts=[`${meta(S).n} ביומן השדה`, `${nc} למשמורת`, ns?`${ns} לפיצול`:""].filter(Boolean).join(", ");
   const facts=[["אתר",site],["כתובת",h.address],["תאריך",fmtFull(h.date)],["לקוח",h.client],
     ["דוגמים",[h.s1,h.s2].filter(Boolean).join(", ")],["דגימות",counts]]
     .filter(([,v])=>v&&String(v).trim()).map(([k,v])=>`${k}: ${v}`);
@@ -1744,14 +1888,22 @@ const TABS=[
   {id:"docs", label:"רשומות", view:viewDocs, count:()=>allDocs().length},
   {id:"day", label:"יום דיגום", view:viewDay, count:()=>null},
   {id:"log", label:"יומן שדה", view:viewLog, count:()=>S.samples.length},
-  {id:"coc", label:"שרשרת משמורת", view:()=>custodyView("coc"), count:()=>cocRows().length},
-  {id:"spl", label:"משמורת פיצול", view:()=>custodyView("split"), count:()=>splitRows().length},
+  {id:"coc", label:"שרשרת משמורת", view:()=>custodyView("coc"), count:()=>custodyRows(false).length},
+  {id:"spl", label:"משמורת פיצול", view:()=>custodyView("split"), count:()=>custodyRows(true).length},
   {id:"hand",label:"מסירה וקבצים", view:viewHand, count:()=>null},
   {id:"hist",label:"תיעוד שינויים", view:viewHist, count:()=>S.changes.length},
 ];
 let active="day";
 
+/* בנייה מחדש בזמן שגלגלת שעה/תאריך פתוחה מחליפה את השדה מתחתיה והחלונית קופצת
+   (למשל כששינוי קודם נרשם בתיעוד אחרי 3 שניות). הבנייה נדחית עד שהחלונית נסגרת */
+let renderWaiting=false;
 function render(){
+  const a=document.activeElement;
+  if(a && a.matches && a.matches("main input[type=time], main input[type=date]")){
+    if(!renderWaiting){ renderWaiting=true; a.addEventListener("blur",()=>{ renderWaiting=false; render(); },{once:true}); }
+    return;
+  }
   const nav=document.getElementById("tabs");
   nav.textContent="";
   for(const t of TABS){

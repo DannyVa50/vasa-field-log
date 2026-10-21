@@ -43,6 +43,8 @@ Planned operation: two drilling rigs plus a vacuum truck and 2–3 samplers, in 
    - Ticked samples arrive with name, depth, time and PID already filled.
    - Per sample: sampling tool (jar / liner), number of containers, type (grab is the default, or composite), and which analyses (7 fixed columns plus up to 5 user-named ones).
    - Lab and notes. The lab is picked from the list (בקטוכם, אלכם, אמינולאב, מכון הנפט) or "אחר" with a typed name. The split goes to a **different lab** than the main custody.
+   - **"הוסף שורה"** adds a custody-only row the sampler fills freely (it isn't in the field log).
+   - **Duplicate (חזרה):** a 3-second long press on a row → "האם לבצע חזרה?" → a new row under it, named `<sample id> חזרה`, with everything copied except the analyses, which the sampler picks.
 4. **Sketch**: required for stockpile and verification sampling (work instruction 30001 §7c). Draw it on screen or photograph a paper sketch.
 5. **End of day**: finish time, end temperature, field-log notes.
 6. **Deviations, storage, handover** (tab "מסירה וקבצים"):
@@ -86,7 +88,7 @@ The PDFs are the official forms themselves. The blank pages of the Word forms in
 | Sketch for stockpiles / verification sampling | §7c | Sketch card, printed as a page of form 57 |
 | Deviations and additions | §8 | What / why / who approved. Printed in the 33.1 notes line |
 | Storage temperature 4±2 °C | — | "Not OK" shows a warning that an exceptions form is required |
-| QC: duplicates and splits | — | Non-blocking note on the custody tab. For n samples in custody: duplicates = 0 if n = 0, 1 if n < 10, otherwise ⌈n/20⌉; splits = 0 if n ≤ 9, otherwise ⌈n × 10%⌉. Splits are counted from the split column. Duplicates are **not** marked in the app, so the note asks the sampler to check them. Duplicates and splits are not sent for VOC or TPH GRO |
+| QC: duplicates and splits | — | Non-blocking note on the custody tab. For n samples in custody: duplicates = 0 if n = 0, 1 if n < 10, otherwise ⌈n/20⌉; splits = 0 if n ≤ 9, otherwise ⌈n × 10%⌉. Splits are counted from the split custody, duplicates from the duplicate rows (long press). Duplicates and splits are not sent for VOC or TPH GRO, and the note warns when a duplicate is marked for them |
 
 ## Glossary — Hebrew ↔ code
 

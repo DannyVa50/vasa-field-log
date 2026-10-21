@@ -2,6 +2,17 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 21.10.2026 — Custody-only rows, duplicates, stable time picker
+
+- **Free rows in the chain of custody and the split custody** (Danny): an "הוסף שורה" button, like the field log's, adds a row that exists only in the custody form. The sampler fills everything in it, including the sample id, depth, time and PID. It doesn't appear in the field log.
+- **Duplicates (חזרה) by long press** (Danny): holding a custody row for 3 seconds opens "האם לבצע חזרה?". On confirm, a new row opens right under it with "חזרה" after the sample id. Everything is copied **except the analyses**, which the sampler picks for the duplicate. Engineering choices:
+  - The row fills with colour during the press, so the sampler knows to keep holding.
+  - A press on an input, select or button doesn't count. Moving the finger more than 12 px (scrolling) cancels.
+  - A duplicate can't itself be duplicated. Locked records ignore the press.
+  - Duplicates and free rows can be deleted (✕), after an in-app confirmation (not `confirm()`, which some hosts block). The deletion is logged.
+- **The QC note now counts the duplicates** instead of asking the sampler to check them by hand. It warns when a duplicate is marked for VOC or TPH GRO (duplicates aren't sent for those).
+- **Time and date fields save when the picker closes** (bug from the field). On the iPad, the time wheel fired `change` on every spin. Every save rebuilt the screen, which replaced the input under the open picker, so the picker jumped. `render()` is also deferred while a time/date input has focus, because a change-log commit 3 s after an earlier edit also re-renders.
+
 ## 17.10.2026 — Labs, split handover, analysis totals
 
 - **Lab pick list** (Danny): בקטוכם, אלכם, אמינולאב, מכון הנפט, or "אחר" with a typed name. It applies to both the main lab and the secondary (split) lab. It is shown in the handover tab and in the custody tabs, and both are the same field. Records with a free-text lab from before the list open as "אחר" with that name, so the printed name doesn't change.

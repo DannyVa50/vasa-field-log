@@ -38,6 +38,8 @@ There is one global, `S`: the **open sampling day** (a "record"). The shape come
     notesLog, notesCoc, notesSplit
   },
   samples: [ blankSample() ... ],   // the field-log rows
+  cocExtra: [ blankExtra() ... ],   // rows that exist only in the chain of custody (free rows and duplicates)
+  splitExtra: [ blankExtra() ... ], // the same for the split custody
   deviations: [ {what, why, who} ],
   storage:  { place, keeper, fromD, fromT, toD, toT, tempOk /* "תקין" | "לא תקין" | "" */ },
   handover:      { byName, byDate, byTime, labName, labDate, labTime },   // chain of custody → main lab
@@ -59,11 +61,28 @@ A sample (`blankSample()`):
   auto: ["stype", "sp.stype"] }   // keys whose current value was copied in, not typed (see change log)
 ```
 
+A custody-only row (`blankExtra()`):
+
+```js
+{ id /* uuid */, dup: false /* true = duplicate (חזרה) */, after: "" /* id of the row a duplicate sits under */,
+  name, depth, time, pid, dayLetter, tool, packs, stype: "חטף", tests: [], note, auto: ["stype"] }
+```
+
+**Custody rows.** `custodyRows(isSplit)` is the one list of form 33.1 rows, in print order, used by the custody tabs, the PDF, the Excel file, the email counts and the tab counts:
+- the field-log samples ticked for custody (`cocRows()` / `splitRows()`), then the free rows (`after: ""`)
+- each duplicate is inserted under its `after` row, after any earlier duplicates of the same row
+- a duplicate whose row left the custody (unticked or deleted in the log) goes to the end, so no record is dropped silently
+
+Each item is `{id, src, x, bag, name, depth, time, pid, dayLetter, note, dup}`. `src` is the sample (or null), `x` the extra row (or null). `bag` is where tool, packs, type and tests live: the sample, `sample.sp` for the split, or the extra row. `setRow(r, k, v, label, isSplit)` routes an edit to `setSample` / `setSplit` / `setExtra`. In the main custody a sample's note is `cocNote`. `hasSplit()` replaces "are there split samples" checks, so a split custody with only free rows still gets its handover cards, PDF and Excel sheet.
+
+**Duplicates:** `duplicateRow(r, isSplit)` copies everything except `tests`, appends " חזרה" to the name, and lists the copied keys in `auto` (same rule as a new log row: the first edit of a copied value is not a change). The long press is `longPress(tr, fn)`: 3 s (`LONG_MS`), ignored on inputs/selects/buttons, cancelled by pointerup/cancel/leave or by moving more than 12 px. `askDuplicate` and `deleteRow` confirm through `askYes(title, text, yes, onYes, danger)`, an in-app dialog. **Don't use the browser's `confirm()`**: some hosts block it and it returns false at once, so the action silently does nothing. That's how the first version of the ✕ failed in testing. Rows with `dup: true` get no long press.
+
 `extra` and `qc` exist on samples but no UI uses them yet. The open analysis names are per day (`head.extraTests`), and a sample's `tests` array holds analysis **names**: both the fixed `TESTS` and the day's extra names.
 
 **`normalize(d)`** upgrades any stored record to the current shape:
 - It merges `d` over `blankDay()`, including the nested `head`, `storage`, `handover`, `handoverSplit` and `sigs`.
 - It pads `extraTests` to 5 and maps old analysis names through `TEST_OLD`.
+- It fills `cocExtra` / `splitExtra` (empty in records from before 21.10.2026) and merges each row over `blankExtra()`.
 - It moves a free-text lab name that isn't in `LABS` (from versions before the lab list) to `"אחר"` + `labOther` / `labSplitOther`, so the printed name doesn't change.
 
 Every record loaded from storage goes through it, so **new fields must have defaults in `blankDay()` / `blankSample()`**.
@@ -79,13 +98,15 @@ Every record loaded from storage goes through it, so **new fields must have defa
 
 The main custody keeps its pre-split labels and keys, so its change log continues unbroken. `handCards(kind)` renders the two cards. The split cards appear only when there are split samples.
 
-Derived values: `cocRows()` (samples with `toCoc`), `splitRows()` (samples with `toSplit`), `allTests()` (fixed + named extras), and `qcNeeded()` (see [domain.md](domain.md)).
+Derived values: `cocRows()` (samples with `toCoc`), `splitRows()` (samples with `toSplit`), `custodyRows(isSplit)` and `hasSplit()` (above), `allTests()` (fixed + named extras), and `qcNeeded()` (see [domain.md](domain.md)). `qcNeeded()` counts custody rows without the duplicates as `n`, and reports `haveDup`, `haveSpl` and `badDup` (duplicates marked for VOC or TPH GRO).
 
 ## Rendering
 
 `render()` rebuilds the tab bar, the **active tab's whole section**, and the top bar after every `save()`. The views (`viewDay`, `viewLog`, `custodyView(kind)`, `viewHand`, `viewHist`, `viewDocs`) return fresh DOM built with `el(tag, attrs, ...children)`. Inputs commit on `change` (blur or select), not on `input`, so a rebuild never interrupts typing.
 
 Form helpers: `field(label, node, hint)`, `txt(val, on, {type, ph})`, `area`, `sel(val, list, on)`, `multi` (multi-select chips), `toggle` (one boolean chip). All pass `disabled: RO()`, where `RO()` is `S.locked`.
+
+**Time and date inputs commit on blur, not on `change`.** The iPad's wheel picker fires `change` on every spin, and a save there rebuilds the section and replaces the input under the open picker, so the picker jumps. `txt` marks the value dirty while the input has focus and calls `on` on blur. `render()` also returns early while a `main input[type=time|date]` has focus, and re-runs once on its blur. Any re-render can hit this, e.g. a change-log commit firing 3 s after an earlier edit. Keep both guards if you touch `txt` or `render`.
 
 Signatures (`pad`) and the sketch are `<canvas>` elements drawn with pointer events. On pointer-up they're stored as PNG data URLs. They're drawn in the screen's text colour and recoloured to black (`inked`) when printed.
 
