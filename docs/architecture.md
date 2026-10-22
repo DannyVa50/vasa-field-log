@@ -121,6 +121,15 @@ The app keeps a change log because the records are accredited quality records. T
 - Checkboxes, signatures ("signed" / "cleared"), the sketch, adding and deleting rows, locking and reopening are all logged.
 - The log cannot be edited or deleted from the UI. `viewHist` shows it, newest first.
 
+**Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026).** When `logChange` sees a change that will be logged (`origin !== ""` and `origin !== to`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
+- **The answer never decides whether the change is logged.** `commitChange` logs exactly as before and adds `ask` ("כן" / "לא" / "" if not answered yet) and `k` (the change key, e.g. `head.calLab` or `<sample id>.tests`).
+- If the 3-second commit happens before the answer, `q.entry` points at the logged entry, and the answer is written into it and saved.
+- `shown()` shows booleans as "מסומן" / "לא מסומן" in the dialog only. The log still stores `true` / `false`.
+- `askAnswers()` collects every answered change from all records on the device. `exportAnswers()` delivers them as a UTF-8 CSV with a BOM through `offerFile`.
+- `viewHist` shows "לתעד: …" per entry and a card with the export button.
+
+When the answers have been analysed, update the logging rules here and in `logChange`, then set `ASK_LOG = false`. Keep `ask` / `k` on old entries.
+
 Setters that log: `setHead(k, v, label)`, `setSub(obj, k, v, label, key)`, `setSample(sm, k, v, label)`, `setSplit(sm, k, v, label)`, and `setColor`. Use them for any new field.
 
 **Lock** (its own card, "נעילת הרשומה"): "נעל וסגור" is enabled only when every lab that received samples has signed and its representative is named. That means the main lab always, and the split lab too when there are split samples (`labSigned`, `pendingLabs`). A locked record is read-only. "פתח לעריכה" asks for a reason, bumps `S.v`, logs the reopening, and unlocks.
@@ -211,7 +220,7 @@ File names come from `fileName(kind)`: `<kind name> <site> DDMMYY` + extension, 
    - Defaults: the field log on; custody on when it has samples; split on when shown; Excel off.
 2. **"הכנת המייל"** builds the chosen files with `mailFile(kind)`, which uses `buildPdf` / `buildXlsx`. It also builds the subject and body with `mailText(names)`.
    - Subject: `מסמכי יום דיגום — <site> — dd.mm.yyyy`.
-   - Body: greeting; site, address, date, client, samplers and sample counts; the list of attached files; signed with sampler 1, the company name and the website.
+   - Body: greeting; site, address, date, client, samplers and sample counts; the handover status of each custody that has rows (`handoverLines()`: signed by the lab when both `sigs[by]` and `sigs[lab]` exist, else "not yet received, a lab-signed copy will follow"); the list of attached files; signed with sampler 1, the company name and the website.
 3. **"פתיחת המייל"**:
    - If `navigator.canShare({files})` is true, `navigator.share({files, title: subject, text: body})` opens the OS share sheet. The user picks Mail or Outlook, which opens a new email with the attachments and body.
    - Otherwise (no file sharing, e.g. desktop Firefox, or Chromium in some contexts) there's a fallback: a download link per file, plus a `mailto:` link with the subject and body, and the user attaches the files by hand.

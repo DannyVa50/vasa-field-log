@@ -2,6 +2,19 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 22.10.2026 — Orange, handover status in the email
+
+- **"כתום" (orange) added to the field-log colours** (Danny).
+- **Learning period for the change log: "האם לתעד שינוי?"** (Danny). Before every change the app logs, the sampler is asked whether it should be logged. The goal is to learn from the answers which changes really need logging, and then update the rules. Danny's choices:
+  - **The change is logged whatever the answer.** The answer is stored next to it (`ask`, plus the field key `k`). ISO 17025 traceability is never weakened during the learning period.
+  - **Ask only about what is logged today**: a changed existing value, a tick/untick, a signature, a deleted row. First entries are not asked about (that would mean a question on almost every field).
+  - **Collecting:** a "שליחת תשובות התיעוד" button in the change-log tab exports every answer on the device as one CSV (with a BOM for Excel), which the sampler emails to Danny.
+  - **Danny turns it off** in a later version (`ASK_LOG = false`). Samplers can't turn it off.
+- **The email body states the handover status of each chain of custody** (Danny). Handed over = the sampler signed the handover **and** the lab representative signed the receipt. Danny's wording:
+  - handed over: "שרשרת משמורת חתומה ע״י מעבדה ראשית <lab> - הדגימות התקבלו במעבדה ב-<date>." / split: "שרשרת משמורת פיצול חתומה ע״י מעבדה משנית <lab> - הדגימות התקבלו במעבדה ב-<date>."
+  - not yet: "הדגימות עדיין לא התקבלו במעבדה <lab>, ומסמך חתום ע״י המעבדה האנליטית יועבר בהמשך." / split: "דגימות הפיצול עדיין לא התקבלו במעבדה המשנית <lab>, …"
+  - The lab name has no brackets. The split custody gets its own line when it has rows. The line is written whatever files are attached, because the client needs to know where the samples are.
+
 ## 21.10.2026 — Custody-only rows, duplicates, stable time picker
 
 - **Free rows in the chain of custody and the split custody** (Danny): an "הוסף שורה" button, like the field log's, adds a row that exists only in the custody form. The sampler fills everything in it, including the sample id, depth, time and PID. It doesn't appear in the field log.

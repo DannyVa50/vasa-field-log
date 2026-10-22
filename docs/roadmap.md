@@ -30,6 +30,10 @@ The change log must survive a merge.
 
 The import must keep the change log and add a "יובא" (imported) entry.
 
+## Change-log rules from the learning period
+
+Since 22.10.2026 the app asks "האם לתעד שינוי?" before every logged change (`ASK_LOG`). Next step: collect the CSVs from the samplers, analyse which kinds of changes they mark "לא" (by field key and situation), propose rule changes to Danny, update `logChange`, and set `ASK_LOG = false`.
+
 ## Smaller items
 
 - **Default email recipient:** the share sheet can't pre-fill one. Possible workaround: copy an address to the clipboard, or add a `mailto:` "To" in the fallback path only.
