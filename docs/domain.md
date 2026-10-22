@@ -36,7 +36,7 @@ Planned operation: two drilling rigs plus a vacuum truck and 2–3 samplers, in 
    - Samplers sign.
 2. **Field log** (tab "יומן שדה", form 57). One row per sample:
    - borehole no., depth, sample name (auto: `borehole-depth`), time
-   - soil type, colour (up to two), odour, moisture, PID, PID 20%, notes
+   - soil type, colour (up to two, from חום, שחור, אדום, כתום, אפור, לבן, צהוב, אחר), odour, moisture, PID, PID 20%, notes
    - A new row inherits the borehole, soil and colour from the row above, and the time is set to now.
    - Tick **משמורת** to send the sample to the lab, and **פיצול** to also send a split to a secondary lab.
 3. **Chain of custody** (tabs "שרשרת משמורת" and "משמורת פיצול", form 33.1).

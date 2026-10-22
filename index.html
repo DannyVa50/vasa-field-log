@@ -252,7 +252,7 @@ const RIGS     = ["דחיקה ישירה – גיאופרוב","דיגום יד�
 const WEATHER  = ["שמשי","מעונן","מעונן חלקי","גשום","חם","חם מאוד"];
 const LANDUSE  = ["מגורים","תעשייה","מסחר","חקלאי"];
 const SOIL     = ["חרסית","חרסית שמנה","חמרה","לס","כורכר","חול","מצעים","אחר"];
-const COLOR    = ["חום","שחור","אדום","אפור","לבן","צהוב","אחר"];
+const COLOR    = ["חום","שחור","אדום","כתום","אפור","לבן","צהוב","אחר"];
 const ODOUR    = ["לא","כן","חזק"];
 const MOIST    = ["יבש","לח","רטוב"];
 const TOOL     = ["צנצנת","ליינר"];
@@ -357,14 +357,53 @@ let db=null, unsubDay=null, saveT=null, suppress=false, flash=null;
 const COMMIT_MS = 3000;
 const pendingChg = new Map();
 
+/* תקופת למידה (מ-22.10.2026, החלטת דני): לפני כל שינוי שנרשם בתיעוד נשאל הדוגם "האם לתעד שינוי?".
+   השינוי נרשם בכל מקרה — התשובה רק נשמרת לידו (ask, ו-k = מפתח השדה), ונשלחת לדני מלשונית תיעוד השינויים.
+   לפי התשובות יעודכנו הכללים מתי לתעד. דני מכבה את השאלה בגרסה הבאה: ASK_LOG=false */
+const ASK_LOG = true;
+/* תיבת סימון נרשמת כ-true/false — לדוגם מוצג "מסומן" / "לא מסומן" */
+const shown = v => v==="true" ? "מסומן" : v==="false" ? "לא מסומן" : (v || "ריק");
+const askQueue = [];
+let asking = false;
+function askLog(label, from, to){
+  const q = {ask:"", entry:null};
+  askQueue.push({q, label, from, to});
+  nextAsk();
+  return q;
+}
+function nextAsk(){
+  if(asking || !askQueue.length) return;
+  asking = true;
+  const {q, label, from, to} = askQueue.shift();
+  const answer = a => {
+    m.remove(); q.ask = a;
+    /* השינוי כבר נרשם (עברו 3 שניות) — התשובה נכתבת לרשומה שלו */
+    if(q.entry){ q.entry.ask = a; save(); }
+    asking = false; nextAsk();
+  };
+  const m = el("div",{class:"modal",role:"dialog","aria-modal":"true"},
+    el("div",{class:"card"},
+      el("h2",{},"האם לתעד שינוי?"),
+      el("div",{class:"sub",style:"overflow-wrap:anywhere"}, el("b",{},label), el("br"), `${shown(from)} ← ${shown(to)}`),
+      el("div",{class:"note",style:"margin-top:10px"},
+        "השינוי נרשם בתיעוד בכל מקרה. התשובה עוזרת לקבוע מתי צריך לתעד שינוי ומתי לא."),
+      el("div",{class:"bar"},
+        el("button",{class:"btn",type:"button",onclick:()=>answer("כן")},"כן, לתעד"),
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn ghost",type:"button",onclick:()=>answer("לא")},"לא צריך לתעד"))));
+  document.body.append(m);
+}
+
 function commitChange(key){
   const rec = pendingChg.get(key);
   pendingChg.delete(key);
   if(!rec) return false;
   clearTimeout(rec.timer);
   if(rec.from === "" || String(rec.from) === String(rec.to)) return false;
-  S.changes.push({t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label:rec.label,
-                  from:String(rec.from), to:String(rec.to)});
+  const entry = {t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label:rec.label,
+                 from:String(rec.from), to:String(rec.to)};
+  if(rec.q){ entry.ask = rec.q.ask; entry.k = key; rec.q.entry = entry; }
+  S.changes.push(entry);
   return true;
 }
 /* לפני מעבר רשומה או סגירת הדף — שינוי שטרם התייצב לא ילך לאיבוד או יירשם ברשומה הלא נכונה */
@@ -378,8 +417,11 @@ function logChange(label, from, to, key){
   const prev = pendingChg.get(key);
   const origin = prev ? prev.from : f;
   if(prev) clearTimeout(prev.timer);
+  /* שואלים פעם אחת לכל שינוי שיירשם: ערך קיים שהשתנה. עריכות חוזרות באותו שדה לפני הרישום — אותה שאלה */
+  let q = prev ? prev.q : null;
+  if(!q && ASK_LOG && origin !== "" && origin !== t) q = askLog(label, origin, t);
   const timer = setTimeout(()=>{ if(commitChange(key)) save(); }, COMMIT_MS);
-  pendingChg.set(key, {label, from:origin, to:t, timer});
+  pendingChg.set(key, {label, from:origin, to:t, timer, q});
 }
 
 function setHead(k,v,label){ logChange(label,S.head[k],v,"head."+k); S.head[k]=v; save(); }
@@ -1184,12 +1226,21 @@ function viewHist(){
         c.from?el("span",{class:"from"},c.from):el("span",{style:"color:var(--muted)"},"ריק"),
         " ← ",
         c.to?el("span",{class:"to"},c.to):el("span",{style:"color:var(--muted)"},"ריק"),
-        el("span",{style:"color:var(--muted)"},`  ·  ${c.who}`)))))
+        el("span",{style:"color:var(--muted)"},`  ·  ${c.who}`),
+        c.ask!==undefined?el("span",{style:"color:var(--muted)"},`  ·  לתעד: ${c.ask||"לא נענה"}`):null))))
       :el("div",{class:"empty"},"עוד לא בוצעו שינויים."),
     el("div",{class:"bar"},
       el("span",{class:"pill"},`${items.length} רשומות`),
       el("span",{class:"spacer"}),
-      el("button",{class:"btn ghost",onclick:exportJson},"ייצוא נתונים"))));
+      el("button",{class:"btn ghost",onclick:exportJson},"ייצוא נתונים"))),
+    ASK_LOG||askAnswers().length>1 ? el("div",{class:"card"},
+      el("h2",{},"תשובות ״האם לתעד שינוי?״"),
+      el("div",{class:"sub"},"בתקופה זו האפליקציה שואלת לפני כל שינוי שנרשם, כדי ללמוד מתי צריך לתעד. "+
+        "הכפתור אוסף את התשובות מכל הרשומות במכשיר לקובץ אחד. בחלון שנפתח: ״שיתוף״ ← Mail, ושולחים לדני."),
+      el("div",{class:"bar"},
+        el("span",{class:"pill"},`${askAnswers().length-1} תשובות במכשיר`),
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn",type:"button",onclick:exportAnswers},"שליחת תשובות התיעוד"))) : null);
 }
 
 /* ============ PDF ============
@@ -1754,6 +1805,23 @@ function exportJson(){
   offerFile(new Blob([json],{type:"application/json"}), `${fileName("log")}.json`);
 }
 
+/* כל תשובות "האם לתעד שינוי?" מכל הרשומות במכשיר: שורת כותרת ושורה לכל שינוי שנשאל עליו */
+function askAnswers(){
+  const docs=[S, ...localIdx.filter(e=>e.id!==S.id).map(e=>readJSON(kDoc(e.id))).filter(Boolean)];
+  const rows=[["רשומה","תאריך הדיגום","מועד השינוי","מבצע","שינוי","ערך קודם","ערך חדש","מפתח השדה","האם לתעד"]];
+  for(const d of docs) for(const c of (d.changes||[])) if(c.ask!==undefined)
+    rows.push([docTitle(d), fmtFull((d.head||{}).date), new Date(c.t).toLocaleString("he-IL"),
+      c.who, c.label, c.from, c.to, c.k||"", c.ask||"לא נענה"]);
+  return rows;
+}
+function exportAnswers(){
+  persistNow();
+  const rows=askAnswers();
+  /* BOM — כדי ש-Excel יפתח את העברית נכון */
+  const csv="﻿"+rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  offerFile(new Blob([csv],{type:"text/csv"}), `תשובות תיעוד שינויים ${ddmmyy(todayISO())}.csv`);
+}
+
 /* ============ שליחה במייל ============
    דף אינטרנט לא יכול לצרף קובץ למייל בעצמו. גיליון השיתוף של המכשיר (navigator.share) כן:
    בוחרים בו Mail או Outlook, והמייל נפתח עם הקבצים וגוף ההודעה. הנמען נבחר במייל עצמו.
@@ -1769,6 +1837,22 @@ async function mailFile(kind){
   const blob = kind==="xlsx" ? buildXlsx() : await buildPdf(kind);
   return {name:fileName(kind)+(kind==="xlsx"?".xlsx":".pdf"), blob};
 }
+/* מצב המסירה לכל שרשרת משמורת שיש בה דגימות. נמסרה = הדוגם חתם במסירה ונציג המעבדה חתם בקבלה */
+function handoverLines(){
+  const out=[];
+  for(const kind of ["coc","split"]){
+    if(!custodyRows(kind==="split").length) continue;
+    const H=HAND[kind], ho=H.ho(), lab=labName(H.labKey), split=kind==="split";
+    /* ניסוח של דני (22.10.2026) */
+    const named=t=>lab?`${t} ${lab}`:t;
+    if(S.sigs[H.by] && S.sigs[H.lab])
+      out.push(`${split?"שרשרת משמורת פיצול":"שרשרת משמורת"} חתומה ע״י ${named(split?"מעבדה משנית":"מעבדה ראשית")}`+
+        ` - הדגימות התקבלו במעבדה${ho.labDate?` ב-${fmtFull(ho.labDate)}`:""}.`);
+    else
+      out.push(`${split?"דגימות הפיצול":"הדגימות"} עדיין לא התקבלו ${named(split?"במעבדה המשנית":"במעבדה")}, ומסמך חתום ע״י המעבדה האנליטית יועבר בהמשך.`);
+  }
+  return out;
+}
 /* הנושא חוזר גם בראש הגוף — לא בכל מכשיר הנושא עובר מגיליון השיתוף למייל */
 function mailText(names){
   const h=S.head, site=(h.site||"").trim()||"ללא שם אתר";
@@ -1778,7 +1862,9 @@ function mailText(names){
   const facts=[["אתר",site],["כתובת",h.address],["תאריך",fmtFull(h.date)],["לקוח",h.client],
     ["דוגמים",[h.s1,h.s2].filter(Boolean).join(", ")],["דגימות",counts]]
     .filter(([,v])=>v&&String(v).trim()).map(([k,v])=>`${k}: ${v}`);
+  const hand=handoverLines();
   const body=["שלום,","",`מצורפים מסמכי יום הדיגום — ${site}, ${fmtFull(h.date)}.`,"",...facts,
+    ...(hand.length?["",...hand]:[]),
     "","קבצים מצורפים:",...names.map(n=>`• ${showName(n)}`),
     "","בברכה,",...[h.s1,"וזה אקולוגיה בע״מ","www.vasa-eco.co.il"].filter(Boolean)].join("\n");
   return {subject, body};
