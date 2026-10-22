@@ -1744,8 +1744,25 @@ function workbookSheets(){
     ["הערות — יומן שדה",h.notesLog],["הערות — שרשרת משמורת",h.notesCoc],
     ...(split?[["הערות — משמורת פיצול",h.notesSplit]]:[])
   ].map(([k,v])=>[k,v==null?"":v]);
+
+  const tests=allTests();
+  /* סיכום אנליזות לפי סוג, לכל מעבדה בנפרד — מעבדה ראשית, ומעבדה משנית כשיש פיצול (דני, 22.10.2026).
+     kind לכל שורה קובע את הסגנון: sec כותרת, tot סה״כ, אחרת שורת אנליזה */
+  const kinds=details.map(()=>"kv");
+  for(const isSplit of [false,true]){
+    const rows=custodyRows(isSplit);
+    if(!rows.length) continue;
+    const per=tests.map(t=>rows.filter(r=>r.bag.tests.includes(t)).length), sum=per.reduce((a,b)=>a+b,0);
+    details.push([],[isSplit?"אנליזות — מעבדה משנית (פיצול)":"אנליזות — מעבדה ראשית",
+      labName(isSplit?"labSplit":"lab")||"לא נבחרה מעבדה"]);
+    kinds.push("gap","sec");
+    tests.forEach((t,i)=>{ details.push([t,per[i]]); kinds.push("an"); });
+    /* מספרים בתא נפרד: טקסט שמתחיל בספרה מוצג ב-Excel בכיוון הפוך */
+    details.push(["סה״כ אנליזות",sum],["מספר דגימות",rows.length]);
+    kinds.push("tot","tot");
+  }
   const sheets=[{name:"פרטי יום הדיגום",widths:[28,70],rows:details,table:false,
-    styles:(r,c)=>c===0?XS.label:XS.cell}];
+    styles:(r,c)=>({sec:XS.label, tot:XS.total, an:XS.cell}[kinds[r]] ?? (c===0?XS.label:XS.cell))}];
 
   sheets.push(tableSheet("יומן שדה",
     ["מס׳ קידוח","מס׳ דגימה","עומק (מטר)","שעה","סוג קרקע (חתך ליתולוגי)","צבע","ריח","לחות","ערך PID (ppm)","PID 20%","הערות"],
@@ -1753,7 +1770,6 @@ function workbookSheets(){
       [s.boring,s.name,xnum(s.depth),s.time,jv(s.soil),jv(s.color),s.odour,s.moist,xnum(s.pid),xnum(s.pid20),s.note]),
     [10,14,10,8,22,14,7,8,12,10,30], new Set([4,10])));
 
-  const tests=allTests();
   /* שורת סה״כ: כמות אנליזות מכל סוג מתחת לעמודה שלה, והסך הכול בעמודת ההערות */
   const coc=(name,rows)=>{
     const bag=r=>r.bag, per=tests.map(t=>rows.filter(r=>bag(r).tests.includes(t)).length);
@@ -1764,7 +1780,8 @@ function workbookSheets(){
         return [r.name,xnum(r.depth),r.time,TOOL_WORD[b.tool]||b.tool,xnum(b.packs),b.stype,
           ...tests.map(t=>b.tests.includes(t)?"V":""),xnum(r.pid),r.note]; }),
       [14,10,9,9,8,9,...tests.map(()=>9),10,30], new Set([tests.length+7]),
-      ["סה״כ אנליזות","","","","","",...per,"",`${sum} אנליזות ${rows.length===1?"בדגימה אחת":`ב-${rows.length} דגימות`}`]);
+      /* הטקסט מתחיל במילה עברית: טקסט שמתחיל בספרה מוצג ב-Excel בכיוון הפוך */
+      ["סה״כ אנליזות","","","","","",...per,"",`סה״כ ${sum} אנליזות ${rows.length===1?"בדגימה אחת":`ב-${rows.length} דגימות`}`]);
   };
   sheets.push(coc("שרשרת משמורת",custodyRows(false)));
   if(split) sheets.push(coc("משמורת פיצול",custodyRows(true)));

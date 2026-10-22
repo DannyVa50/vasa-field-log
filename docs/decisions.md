@@ -2,6 +2,12 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 22.10.2026 — Analysis summary per lab in the Excel
+
+- **The Excel's day-details sheet ends with an analysis summary per lab** (Danny): one block for the primary lab and, when there are splits, one for the secondary lab. Each block has the lab's name, the count of every analysis type (zeros included, so "how many PH" is answered too), the total, and the number of samples. Free rows and duplicates count, like the custody sheets.
+- Engineering: the total and the sample count are separate number cells. A text such as "28 אנליזות ב-10 דגימות" starts with a digit, and Excel then shows it in the wrong direction in an RTL sheet.
+- The same bug was in the custody sheets' total text, which now starts with a Hebrew word ("סה״כ 28 אנליזות ב-10 דגימות"). Verified in Excel.
+
 ## 22.10.2026 — Orange, handover status in the email
 
 - **"כתום" (orange) added to the field-log colours** (Danny).
