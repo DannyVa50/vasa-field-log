@@ -194,6 +194,7 @@ Printed codes follow the form's legend: tool 1 = liner/sleeve, 2 = jar (`TOOL_CO
 - Sheets: day details (key/value), field log, chain of custody, and split custody (only when there are split samples).
 - The details sheet lists the lab, the handover and the lab receipt for each custody. The split ones are prefixed "פיצול — ".
 - **Analysis totals:** each custody sheet ends, after a blank row, with a "סה״כ אנליזות" row. It holds the count of each analysis under its column, and the total plus the number of samples in the notes column. The row sits **outside** the autofilter range (`filterRows`), so sorting or filtering doesn't move it. The style is 6 (`XS.total`).
+- **Analysis summary per lab** at the end of the details sheet: for each custody that has rows (`custodyRows(false)`, then `custodyRows(true)`), a header row (lab type + `labName`), one row per analysis in `allTests()` with its count, then "סה״כ אנליזות" and "מספר דגימות" as numbers. A parallel `kinds` array gives each details row its style (`sec` label, `an` cell, `tot` total).
 - All sheets are `rightToLeft`. Table sheets have a frozen header row and an autofilter.
 - `xnum()` stores numeric strings as numbers.
 - Style 5 (`XS.num`) gives numbers **general** alignment, because in an RTL sheet `horizontal="right"` puts numbers on the left (verified in Excel).
