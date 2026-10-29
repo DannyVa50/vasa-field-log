@@ -256,6 +256,9 @@ const COLOR    = ["חום","שחור","אדום","כתום","אפור","לבן",
 const ODOUR    = ["לא","כן","חזק"];
 const MOIST    = ["יבש","לח","רטוב"];
 const TOOL     = ["צנצנת","ליינר"];
+const LINER    = new Set(["ליינר","שרוול"]);   /* "שרוול" — שם ישן של הליינר ברשומות קודמות */
+/* VOC ו-TPH GRO נדגמים בצנצנת + ויילים, אסור בליינר (ממצא הרשות להסמכה, 22.10.2026; GRO — החלטת דני 29.10.2026) */
+const vocInLiner = b => LINER.has(b.tool) && b.tests.some(t=>/^VOC$|GRO/i.test(String(t).trim()));
 const STYPE    = ["חטף","מורכב"];
 const PACKS    = ["1","2","3","4","5"];
 const DAYS     = ["A","B","C","D","E","F","G"];
@@ -401,14 +404,33 @@ function nextAsk(){
   document.body.append(m);
 }
 
+/* כללי התיעוד — החלטת דני 29.10.2026, אחרי סבב התשובות הראשון של "האם לתעד שינוי?":
+   1. סימון ראשון של תיבה אינו שינוי — "לא מסומן" הוא ברירת מחדל, לא ערך שהדוגם הזין. ביטול סימון נרשם.
+   2. תיקון ערך קיים נרשם, כמו קודם.
+   3. אנליזות: הוספה אינה שינוי. הסרת אנליזה שכבר נבחרה נרשמת.
+   4. מחיקת שורה ריקה מהמשמורת אינה נרשמת (deleteRow).
+   5. חתימות, מסירה ושרטוט נרשמים תמיד. אחרי שמעבדה חתמה, סעיפים 1 ו-3 לא חלים: כל סימון והוספה נרשמים */
+const flat = x => Array.isArray(x) ? x.join(", ") : (x ?? "");
+const labSignedAny = () => Object.values(HAND).some(H=>!!S.sigs[H.lab]);
+function isChange(from, to, key){
+  const f = String(flat(from)), t = String(flat(to));
+  if(f === t) return false;
+  const signed = labSignedAny();
+  if(from === false && !signed) return false;
+  if(f === "") return false;
+  if(/\.tests$/.test(key) && !signed && Array.isArray(from) && Array.isArray(to))
+    return from.some(x=>!to.includes(x));
+  return true;
+}
+
 function commitChange(key){
   const rec = pendingChg.get(key);
   pendingChg.delete(key);
   if(!rec) return false;
   clearTimeout(rec.timer);
-  if(rec.from === "" || String(rec.from) === String(rec.to)) return false;
+  if(!isChange(rec.from, rec.to, key)) return false;
   const entry = {t:stamp(), who:S.head.s1 || "לא נבחר דוגם", label:rec.label,
-                 from:String(rec.from), to:String(rec.to)};
+                 from:String(flat(rec.from)), to:String(flat(rec.to))};
   if(rec.q){ entry.ask = rec.q.ask; entry.k = key; rec.q.entry = entry; }
   S.changes.push(entry);
   return true;
@@ -418,17 +440,16 @@ function flushChanges(){ for(const k of [...pendingChg.keys()]) commitChange(k);
 
 function logChange(label, from, to, key){
   if(suppress) return;
-  const flat = x => Array.isArray(x) ? x.join(", ") : (x ?? "");
-  const f = String(flat(from)), t = String(flat(to));
   key = key || label;
   const prev = pendingChg.get(key);
-  const origin = prev ? prev.from : f;
+  /* הערך המקורי נשמר כמו שהוא (מערך, בוליאני) — כללי התיעוד בודקים את סוגו */
+  const origin = prev ? prev.from : Array.isArray(from) ? [...from] : from;
   if(prev) clearTimeout(prev.timer);
-  /* שואלים פעם אחת לכל שינוי שיירשם: ערך קיים שהשתנה. עריכות חוזרות באותו שדה לפני הרישום — אותה שאלה */
+  /* שואלים פעם אחת לכל שינוי שיירשם. עריכות חוזרות באותו שדה לפני הרישום — אותה שאלה */
   let q = prev ? prev.q : null;
-  if(!q && ASK_LOG && origin !== "" && origin !== t) q = askLog(label, origin, t);
+  if(!q && ASK_LOG && isChange(origin, to, key)) q = askLog(label, String(flat(origin)), String(flat(to)));
   const timer = setTimeout(()=>{ if(commitChange(key)) save(); }, COMMIT_MS);
-  pendingChg.set(key, {label, from:origin, to:t, timer, q});
+  pendingChg.set(key, {label, from:origin, to, timer, q});
 }
 
 function setHead(k,v,label){ logChange(label,S.head[k],v,"head."+k); S.head[k]=v; save(); }
@@ -973,12 +994,17 @@ function askYes(title,text,yes,onYes,danger){
         el("button",{class:"btn ghost",type:"button",onclick:close},"ביטול"))));
   document.body.append(m);
 }
+/* שורה ריקה: אין בה שום ערך שהדוגם הזין. השעה ממולאת מעצמה בהוספה, וסוג הדגימה הוא ברירת מחדל */
+const rowHasData = e => e.tests.length>0 ||
+  ["name","depth","pid","tool","packs","note"].some(k=>String(e[k]??"").trim()!=="");
 function deleteRow(r,isSplit){
-  askYes("למחוק את השורה?", `השורה ${r.name||"ללא שם"} תימחק משרשרת המשמורת. המחיקה נרשמת בתיעוד השינויים.`,
+  const data=rowHasData(r.x);
+  askYes("למחוק את השורה?", `השורה ${r.name||"ללא שם"} תימחק משרשרת המשמורת.`+
+    (data?" המחיקה נרשמת בתיעוד השינויים.":""),
     "כן, למחוק", ()=>{
       const list=extras(isSplit), i=list.indexOf(r.x);
       if(i<0) return;
-      logChange(`${isSplit?"פיצול — ":""}מחיקת שורה ממשמורת`, r.name||"שורה ללא שם", "", "del."+r.x.id);
+      if(data) logChange(`${isSplit?"פיצול — ":""}מחיקת שורה ממשמורת`, r.name||"שורה ללא שם", "", "del."+r.x.id);
       list.splice(i,1); save();
     }, true);
 }
@@ -1016,7 +1042,7 @@ function custodyView(kind){
     const setT = t=>set("tests", b.tests.includes(t)?b.tests.filter(x=>x!==t):[...b.tests,t], "בדיקות נדרשות");
     /* דגימה מהיומן: זיהוי, עומק, שעה ו-PID מגיעים מהיומן ונערכים שם. שורה שנוספה במשמורת — נערכת כאן */
     const own=(k,label,opts)=>r.x ? txt(r[k],x=>set(k,x,label),opts) : (r[k]||"—");
-    const tr=el("tr",{class:[r.x?"xrow":"", r.dup?"":"lp", r.id===freshRow?"fresh":""].filter(Boolean).join(" ")},
+    const tr=el("tr",{class:[r.x?"xrow":"", r.dup?"":"lp", r.id===freshRow?"fresh":"", vocInLiner(b)?"hot":""].filter(Boolean).join(" ")},
       el("td",{class:"rownum"}, String(i+1),
         r.x?el("button",{class:"rowdel",type:"button",title:"מחיקת השורה",disabled:RO(),onclick:()=>deleteRow(r,isSplit)},"✕"):null),
       el("td",{class:"mono w-xs"}, sel(r.dayLetter||S.head.dayLetter,DAYS,x=>set("dayLetter",x,"אות יום"),"")),
@@ -1065,6 +1091,13 @@ function custodyView(kind){
       el("button",{class:"btn ghost",onclick:()=>makePdf(isSplit?"split":"coc")},
         isSplit?"PDF משמורת פיצול":"PDF שרשרת משמורת"))));
   freshRow="";
+
+  /* אזהרה בראש הלשונית — אינה חוסמת */
+  const vocLiner=rows.filter(r=>vocInLiner(r.bag));
+  if(vocLiner.length) v.prepend(el("div",{class:"card"},
+    el("div",{class:"note bad"},el("b",{},"VOC / TPH GRO נבחר עם ליינר. "),
+      "יש לדגום VOC ו-TPH GRO בצנצנת + ויילים, לא בליינר. ",
+      el("span",{class:"mono"},vocLiner.map(r=>r.name||"—").join(" · ")))));
 
   v.append(el("div",{class:"card"},
     el("h2",{},"עמודות אנליזה פתוחות"),

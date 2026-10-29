@@ -32,7 +32,7 @@ The import must keep the change log and add a "יובא" (imported) entry.
 
 ## Change-log rules from the learning period
 
-Since 22.10.2026 the app asks "האם לתעד שינוי?" before every logged change (`ASK_LOG`). Next step: collect the CSVs from the samplers, analyse which kinds of changes they mark "לא" (by field key and situation), propose rule changes to Danny, update `logChange`, and set `ASK_LOG = false`.
+Since 22.10.2026 the app asks "האם לתעד שינוי?" before every logged change (`ASK_LOG`). First round (Oren, 67 answers) analysed on 29.10.2026 → rules in `isChange` (see [decisions](decisions.md)). Next step: when the other samplers' CSVs arrive, check their "לא" answers against the current rules, propose any further change to Danny, then set `ASK_LOG = false`.
 
 ## Smaller items
 
