@@ -71,7 +71,7 @@ A push to `main` deploys. GitHub Pages serves `main` from the root of the repo. 
 
 ## Reference documents
 
-- Form 57 — field log, edition 10 (13.03.2026) · Form 33.1 — chain of custody for soil sampling, edition 21 (10.09.2026)
+- Form 57 — field log, edition 10 (13.03.2026) · Form 33.1 — chain of custody for soil sampling, edition 22 (15.10.2026)
 - Work instruction 30001 for soil sampling, edition 35 (30.08.2026)
 - Ministry of Environmental Protection, professional guidelines for soil surveys (21.04.2016)
 

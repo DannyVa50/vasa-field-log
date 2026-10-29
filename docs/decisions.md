@@ -2,6 +2,12 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 29.10.2026 — Form 33.1, edition 22
+
+- **From 29.10.2026 the app prints the chain of custody on edition 22** (Danny), valid from 15.10.2026. `forms/form-33.1.*` were replaced and `F33` was re-measured from the new PDF. Everything below the logos moved up (about 11.5 pt on page 1, 26.5 pt on page 2), the "אתר / מעבדה / תאריך" line on page 2 moved, and the ISRAC logo is larger (its blank-out box grew). Old records print on edition 22 too.
+- **The Ministry-approval check-boxes changed** (Danny): "הסקר בוצע לפי תוכנית דיגום מאושרת על ידי המשרד להגנת הסביבה, על פי הצהרת יועץ" (new key `planDeclared`) and "…, התוכנית הוצגה למעבדה" (`planShown`, same key, new wording). Engineering choice: the edition-21 "תוכנית דיגום מאושרת" (`planApproved`) is **not** migrated into the consultant-declaration box, because it never said how the approval was attested. It stays in old records and is no longer shown or printed.
+- **TPH GRO became a fixed column** (the form's change): 8 fixed analyses and 4 open columns. `normalize()` removes a fixed name from the open columns and compacts the rest, so records that typed "TPH GRO" into an open column keep their ticks, now under the fixed column. More than 4 open names are kept in the data, but only 4 fit on the form.
+
 ## 22.10.2026 — Analysis summary per lab in the Excel
 
 - **The Excel's day-details sheet ends with an analysis summary per lab** (Danny): one block for the primary lab and, when there are splits, one for the secondary lab. Each block has the lab's name, the count of every analysis type (zeros included, so "how many PH" is answered too), the total, and the number of samples. Free rows and duplicates count, like the custody sheets.
