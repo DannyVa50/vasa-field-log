@@ -1827,6 +1827,14 @@ function workbookSheets(){
   };
   sheets.push(coc("שרשרת משמורת",custodyRows(false)));
   if(split) sheets.push(coc("משמורת פיצול",custodyRows(true)));
+
+  /* תיעוד השינויים (דני, 29.10.2026), מהישן לחדש — כדי שהעקיבות תצא מהאייפד יחד עם הרשומה.
+     בלי תשובות "האם לתעד" ובלי מפתחות שדה, שהם פנימיים */
+  const chg=S.changes.map(c=>[new Date(c.t).toLocaleString("he-IL"),c.who,c.label,xnum(shown(c.from)),xnum(shown(c.to))]);
+  sheets.push(tableSheet("תיעוד שינויים",
+    ["מועד השינוי","מבצע השינוי","שינוי","ערך קודם","ערך חדש"],
+    chg.length?chg:[["לא נרשמו שינויים","","","",""]],
+    [20,16,40,30,30], new Set([2,3,4])));
   return sheets;
 }
 const buildXlsx=()=>workbookBlob(workbookSheets());
