@@ -2,6 +2,17 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 29.10.2026 — Change-log rules from the learning period, VOC-in-liner warning
+
+- **New change-log rules** (Danny approved, after the first round of "האם לתעד שינוי?" answers: one sampler, 67 answers). Half the questions came from simply ticking a sample for the custody: the old rule "a first entry is not a change" never applied to checkboxes, because an unticked box is `false`, not empty. The sampler answered "לא" to every first tick once he got used to the question, "כן" to every untick and every correction of a measured value. Rules:
+  1. A first tick is not logged; unticking is. This includes the morning checklist (Danny: the tick itself is the record).
+  2. Correcting an existing value is logged (unchanged).
+  3. Adding an analysis is not logged; removing one is.
+  4. Deleting an empty custody row is not logged; a row with data is.
+  5. Signatures, handover fields and the sketch are always logged, whatever a sampler answers. Once a lab has signed, rules 1 and 3 stop applying: every tick and added analysis after the signature is logged.
+- The question stays on (`ASK_LOG = true`) until the other samplers' answers come in; they're checked against these rules before it's turned off.
+- **Warning: VOC or TPH GRO with a liner** (Danny). VOC must be sampled into a jar + vials, never a liner (ISRAC finding, 22.10.2026); Danny extended it to TPH GRO, which is volatile too. A custody row with VOC or TPH GRO and tool "ליינר" is highlighted, and a red note at the top of the custody tab names the rows. It warns, it doesn't block.
+
 ## 29.10.2026 — Form 33.1, edition 22
 
 - **From 29.10.2026 the app prints the chain of custody on edition 22** (Danny), valid from 15.10.2026. `forms/form-33.1.*` were replaced and `F33` was re-measured from the new PDF. Everything below the logos moved up (about 11.5 pt on page 1, 26.5 pt on page 2), the "אתר / מעבדה / תאריך" line on page 2 moved, and the ISRAC logo is larger (its blank-out box grew). Old records print on edition 22 too.

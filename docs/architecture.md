@@ -115,20 +115,26 @@ Signatures (`pad`) and the sketch are `<canvas>` elements drawn with pointer eve
 The app keeps a change log because the records are accredited quality records. The rules:
 
 - **Only a change to an existing value is logged.** Typing into an empty field is not a change. Neither is focusing a field without changing it: iPad time and date fields fill themselves on focus, so a touch alone must not be logged.
-- **A change is logged once it settles.** `logChange(label, from, to, key)` keeps a pending entry per key and restarts a 3-second timer (`COMMIT_MS`). Repeated edits keep the **original** `from`. `commitChange` writes `{t, who: head.s1, label, from, to}` to `S.changes`, unless `from` was empty or `from === to`.
+- **A change is logged once it settles.** `logChange(label, from, to, key)` keeps a pending entry per key and restarts a 3-second timer (`COMMIT_MS`). Repeated edits keep the **original** `from`, stored raw (array, boolean) so the rules can check its type. `commitChange` writes `{t, who: head.s1, label, from, to}` to `S.changes` (values flattened to strings) only if `isChange(from, to, key)`.
+- **`isChange` holds the rules** (Danny, 29.10.2026, from the first round of "האם לתעד שינוי?" answers):
+  1. A **first tick** of a checkbox is not a change (`from === false`): "not ticked" is a default, not a value the sampler entered. **Unticking** is logged.
+  2. A correction of an existing value is logged; a first entry into an empty field is not.
+  3. **Analyses** (keys ending `.tests`): adding is not a change; removing an analysis that was already chosen is logged.
+  4. **Deleting an empty custody row** (`rowHasData` false: no name, depth, PID, tool, packs, note or analyses) is not logged — `deleteRow` skips `logChange`.
+  5. Signatures, handover fields and the sketch are always logged (they go through the normal "existing value changed" path). **Once any lab has signed** (`labSignedAny()`), rules 1 and 3 no longer apply: every tick and every added analysis is logged.
 - **Copied values are not changes.** When a new log row inherits the borehole, time, soil or colour, those keys go into `sample.auto`. The first edit of such a key removes it from `auto` without logging.
 - **Pending changes are flushed** (`flushChanges`) before switching records and on `pagehide`, so a change lands in the right record.
-- Checkboxes, signatures ("signed" / "cleared"), the sketch, adding and deleting rows, locking and reopening are all logged.
+- Unticking, signatures ("signed" / "cleared"), the sketch, deleting rows with data, locking and reopening are all logged.
 - The log cannot be edited or deleted from the UI. `viewHist` shows it, newest first.
 
-**Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026).** When `logChange` sees a change that will be logged (`origin !== ""` and `origin !== to`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
+**Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026).** When `logChange` sees a change that will be logged (`isChange(origin, to, key)`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
 - **The answer never decides whether the change is logged.** `commitChange` logs exactly as before and adds `ask` ("כן" / "לא" / "" if not answered yet) and `k` (the change key, e.g. `head.calLab` or `<sample id>.tests`).
 - If the 3-second commit happens before the answer, `q.entry` points at the logged entry, and the answer is written into it and saved.
 - `shown()` shows booleans as "מסומן" / "לא מסומן" in the dialog only. The log still stores `true` / `false`.
 - `askAnswers()` collects every answered change from all records on the device. `exportAnswers()` delivers them as a UTF-8 CSV with a BOM through `offerFile`.
 - `viewHist` shows "לתעד: …" per entry and a card with the export button.
 
-When the answers have been analysed, update the logging rules here and in `logChange`, then set `ASK_LOG = false`. Keep `ask` / `k` on old entries.
+First round analysed 29.10.2026 (one sampler, 67 answers) → the `isChange` rules above. The question stays on until the other samplers' answers arrive; then check them against the rules and set `ASK_LOG = false`. Keep `ask` / `k` on old entries.
 
 Setters that log: `setHead(k, v, label)`, `setSub(obj, k, v, label, key)`, `setSample(sm, k, v, label)`, `setSplit(sm, k, v, label)`, and `setColor`. Use them for any new field.
 
