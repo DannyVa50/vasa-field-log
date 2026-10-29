@@ -2,6 +2,12 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 29.10.2026 — Change log in the client Excel (ISRAC traceability)
+
+- ISRAC (Natasha Ben Avraham, 04.08.2026) asked that changes to technical records made on a tablet be traceable, even before the record is closed, as with paper records. A review against ISO/IEC 17025 §7.5.2 found the app meets the core requirement (original value, new value, time, what changed, from the first moment, not deletable in the app) with gaps: (1) the log lived only on the iPad, (2) "who" is always sampler 1, not the actual editor, (3) for signatures / sketch / photo only "exists / signed / cleared" is kept, not the previous image, and strokes added to an existing sketch aren't logged.
+- **Danny's decision for now: gap 1 only.** The client Excel gets a "תיעוד שינויים" sheet with the full log, so it leaves the iPad with every daily email.
+- **Gaps 2 and 3, and a separate change-log PDF, are deferred.** Danny asked to be asked again about them at the next update.
+
 ## 29.10.2026 — Change-log rules from the learning period, VOC-in-liner warning
 
 - **New change-log rules** (Danny approved, after the first round of "האם לתעד שינוי?" answers: one sampler, 67 answers). Half the questions came from simply ticking a sample for the custody: the old rule "a first entry is not a change" never applied to checkboxes, because an unticked box is `false`, not empty. The sampler answered "לא" to every first tick once he got used to the question, "כן" to every untick and every correction of a measured value. Rules:

@@ -34,6 +34,13 @@ The import must keep the change log and add a "יובא" (imported) entry.
 
 Since 22.10.2026 the app asks "האם לתעד שינוי?" before every logged change (`ASK_LOG`). First round (Oren, 67 answers) analysed on 29.10.2026 → rules in `isChange` (see [decisions](decisions.md)). Next step: when the other samplers' CSVs arrive, check their "לא" answers against the current rules, propose any further change to Danny, then set `ASK_LOG = false`.
 
+## Change-log traceability — deferred items (ask Danny at the next update)
+
+From the 29.10.2026 review against ISRAC's requirement (see [decisions](decisions.md)). Danny asked to be asked again at the next update:
+- record the actual editor ("מי מבצע את השינוי?") for changes to an earlier day's record or after a lab signature, instead of always sampler 1
+- keep the previous image of a replaced or cleared signature / sketch / sketch photo, and log strokes added to an existing sketch
+- a separate "תיעוד שינויים" PDF (office only, or as the last page of the field log)
+
 ## Smaller items
 
 - **Default email recipient:** the share sheet can't pre-fill one. Possible workaround: copy an address to the clipboard, or add a `mailto:` "To" in the fallback path only.

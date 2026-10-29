@@ -197,7 +197,8 @@ Printed codes follow the form's legend: tool 1 = liner/sleeve, 2 = jar (`TOOL_CO
 `buildXlsx()` → `workbookBlob(workbookSheets())` writes an `.xlsx` without libraries:
 
 - Office Open XML parts with inline strings, packed by `zipBlob()` (zip "stored" method, CRC-32 in `crc32`).
-- Sheets: day details (key/value), field log, chain of custody, and split custody (only when there are split samples).
+- Sheets: day details (key/value), field log, chain of custody, split custody (only when there are split samples), and **"תיעוד שינויים"** (always last).
+- **Change-log sheet** (Danny, 29.10.2026, in answer to ISRAC's traceability requirement): `S.changes` oldest first — time (`toLocaleString("he-IL")`, as in the answers CSV), who, change, old value, new value. Booleans go through `shown()` ("מסומן" / "לא מסומן"), empty values show "ריק". The internal `ask` and `k` are left out. With no changes the sheet has one row, "לא נרשמו שינויים". This is the only copy of the log that leaves the iPad.
 - The details sheet lists the lab, the handover and the lab receipt for each custody. The split ones are prefixed "פיצול — ".
 - **Analysis totals:** each custody sheet ends, after a blank row, with a "סה״כ אנליזות" row. It holds the count of each analysis under its column, and the total plus the number of samples in the notes column. The row sits **outside** the autofilter range (`filterRows`), so sorting or filtering doesn't move it. The style is 6 (`XS.total`).
 - **Analysis summary per lab** at the end of the details sheet: for each custody that has rows (`custodyRows(false)`, then `custodyRows(true)`), a header row (lab type + `labName`), one row per analysis in `allTests()` with its count, then "סה״כ אנליזות" and "מספר דגימות" as numbers. A parallel `kinds` array gives each details row its style (`sec` label, `an` cell, `tot` total).
