@@ -41,7 +41,7 @@ Planned operation: two drilling rigs plus a vacuum truck and 2–3 samplers, in 
    - Tick **משמורת** to send the sample to the lab, and **פיצול** to also send a split to a secondary lab.
 3. **Chain of custody** (tabs "שרשרת משמורת" and "משמורת פיצול", form 33.1).
    - Ticked samples arrive with name, depth, time and PID already filled.
-   - Per sample: sampling tool (jar / liner), number of containers, type (grab is the default, or composite), and which analyses (7 fixed columns plus up to 5 user-named ones).
+   - Per sample: sampling tool (jar / liner), number of containers, type (grab is the default, or composite), and which analyses (8 fixed columns plus up to 4 user-named ones).
    - Lab and notes. The lab is picked from the list (בקטוכם, אלכם, אמינולאב, מכון הנפט) or "אחר" with a typed name. The split goes to a **different lab** than the main custody.
    - **"הוסף שורה"** adds a custody-only row the sampler fills freely (it isn't in the field log).
    - **Duplicate (חזרה):** a 3-second long press on a row → "האם לבצע חזרה?" → a new row under it, named `<sample id> חזרה`, with everything copied except the analyses, which the sampler picks.
@@ -67,12 +67,12 @@ The PDFs are the official forms themselves. The blank pages of the Word forms in
 - **Notes** line(s) at the bottom. Overflow continues on the last page.
 - **Sketch**: an extra page of form 57, with the table area blanked out. It is counted in "page X of Y".
 
-### Form 33.1 — chain of custody for soil sampling (שרשרת משמורת לדיגום קרקע), edition 21, A4 landscape
+### Form 33.1 — chain of custody for soil sampling (שרשרת משמורת לדיגום קרקע), edition 22 (valid from 15.10.2026), A4 landscape
 
 - **Header**: site, date, lab, bill to, address, weather, land use, groundwater level, PID instrument, sampler 1 + signature, approver, client, contact.
 - **Yes/no** questions (circled): drilling by a subcontractor, sampling by a subcontractor, deviations none/some.
-- **Check-boxes**: which guidelines were followed, whether the plan was approved and shown to the lab.
-- **Table**: 10 rows on page 1 and 20 on each continuation page. Columns: sample id, depth, time, tool code (1 = liner/sleeve, 2 = jar), containers, type code (ח = grab, מ = composite), 7 fixed analyses (TPH D+O, ICP metals, PFAS, CR6+, PH, SVOC, VOC), 5 open analysis columns, PID, notes.
+- **Check-boxes**: which guidelines were followed (soil survey; stockpiles and verification sampling), and whether the survey followed a sampling plan approved by the Ministry **according to the consultant's declaration**, or one that **was shown to the lab** (edition 22).
+- **Table**: 10 rows on page 1 and 20 on each continuation page. Columns: sample id, depth, time, tool code (1 = liner/sleeve, 2 = jar), containers, type code (ח = grab, מ = composite), 8 fixed analyses (TPH D+O, ICP metals, PFAS, CR6+, PH, SVOC, VOC, TPH GRO), 4 open analysis columns, PID, notes.
 - **Storage before handover**, then **handover** and **lab receipt** with signatures.
 - **"*** סוף דו"ח ***"** (end of report) must end every chain of custody, on its last page.
 - The **ISRAC accreditation logo** is printed only when the job is accredited.

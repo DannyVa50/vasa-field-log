@@ -31,7 +31,7 @@ There is one global, `S`: the **open sampling day** (a "record"). The shape come
     weather: [], landuse, gwl, pid /* instrument serial */, pidOpen, rig, rigOther,
     s1, s2, approver, arrive, finish, tStart, tEnd,
     accredited: true, ready5556, cooled: true, subDrill, subSample, calLab, cal100,
-    guideSurvey, guidePiles, planApproved, planShown,
+    guideSurvey, guidePiles, planDeclared, planShown,   // planApproved: edition-21 key, kept in old records, not shown or printed
     dayLetter: "A",
     lab, labOther, labSplit, labSplitOther,   // a name from LABS or "אחר" + the typed name; use labName(key)
     extraTests: ["","","","",""],
