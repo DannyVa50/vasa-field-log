@@ -235,7 +235,7 @@ File names come from `fileName(kind)`: `<kind name> <site> DDMMYY` + extension, 
 
 Limits of the share sheet:
 - The recipient cannot be pre-filled.
-- Whether iOS copies `title` into Mail's subject line is not documented. That's why the body repeats the site and date in its first line.
+- **Subject** (Danny, 09.11.2026): "מסמכי שדה מיום דיגום <date> <site>". **Outlook on iOS ignores the share `title`** and takes the first line of `text` as the subject (Rami's email of 08.11.2026 arrived as "שלום,"). So the body's first line *is* the subject, followed by a blank line and "שלום,". Keep it that way if you change the body.
 
 The **iPad behaviour must be verified on a device** (see [operations.md](operations.md#what-to-check-on-the-ipad-after-a-change-to-files-or-email)).
 

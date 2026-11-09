@@ -44,7 +44,7 @@ From the 29.10.2026 review against ISRAC's requirement (see [decisions](decision
 ## Smaller items
 
 - **Default email recipient:** the share sheet can't pre-fill one. Possible workaround: copy an address to the clipboard, or add a `mailto:` "To" in the fallback path only.
-- **Check on the iPad** whether the share title becomes the Mail subject. If not, consider putting the subject only in the body's first line.
+- **Check on the iPad** whether Apple Mail takes the share title as the subject (Outlook doesn't — it uses the body's first line, which now holds the subject; resolved 09.11.2026).
 - **Photos of borehole points** (planned in the prototype).
 - **Automatic GPS coordinates** per borehole.
 - **Split custody storage:** the split now has its own handover and lab receipt (17.10.2026). It still shares the "storage before handover" fields with the main custody. If splits are stored separately, they'd need their own storage block.
