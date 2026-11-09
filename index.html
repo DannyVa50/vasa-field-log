@@ -1920,17 +1920,18 @@ function handoverLines(){
   }
   return out;
 }
-/* הנושא חוזר גם בראש הגוף — לא בכל מכשיר הנושא עובר מגיליון השיתוף למייל */
+/* נוסח הנושא — דני (09.11.2026). הנושא הוא גם השורה הראשונה בגוף: Outlook באייפד מתעלם מהנושא
+   שמגיע מגיליון השיתוף ולוקח את השורה הראשונה של הטקסט (מייל של ראמי, 08.11.2026, הגיע עם הנושא "שלום,") */
 function mailText(names){
   const h=S.head, site=(h.site||"").trim()||"ללא שם אתר";
-  const subject=`מסמכי יום דיגום — ${site} — ${fmtFull(h.date)}`;
+  const subject=`מסמכי שדה מיום דיגום ${fmtFull(h.date)} ${site}`;
   const nc=custodyRows(false).length, ns=custodyRows(true).length;
   const counts=[`${meta(S).n} ביומן השדה`, `${nc} למשמורת`, ns?`${ns} לפיצול`:""].filter(Boolean).join(", ");
   const facts=[["אתר",site],["כתובת",h.address],["תאריך",fmtFull(h.date)],["לקוח",h.client],
     ["דוגמים",[h.s1,h.s2].filter(Boolean).join(", ")],["דגימות",counts]]
     .filter(([,v])=>v&&String(v).trim()).map(([k,v])=>`${k}: ${v}`);
   const hand=handoverLines();
-  const body=["שלום,","",`מצורפים מסמכי יום הדיגום — ${site}, ${fmtFull(h.date)}.`,"",...facts,
+  const body=[subject,"","שלום,","",`מצורפים מסמכי יום הדיגום — ${site}, ${fmtFull(h.date)}.`,"",...facts,
     ...(hand.length?["",...hand]:[]),
     "","קבצים מצורפים:",...names.map(n=>`• ${showName(n)}`),
     "","בברכה,",...[h.s1,"וזה אקולוגיה בע״מ","www.vasa-eco.co.il"].filter(Boolean)].join("\n");

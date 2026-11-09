@@ -51,7 +51,7 @@ The only copy of a record is on the device that made it, plus whatever PDFs, Exc
 | The app shows an old version | It is cached. Bring the app to the foreground with reception and wait for the pill, then tap it. Last resort: fully close the app (swipe it away) and reopen it |
 | Red pill "האחסון במכשיר מלא" | `localStorage` is full (~5 MB on iOS). The last change was not saved. Send the old days' PDFs, then remove old records (no UI for this yet, see [roadmap](roadmap.md#storage-capacity)) |
 | "פתיחת המייל" shows download links instead of the share sheet | The browser can't share files (desktop Firefox, some desktop setups). Download the files and attach them to the email that opens. On an iPad this should not happen. If it does, check the iOS version |
-| The email has no subject on the iPad | iOS may not pass the share title to Mail. The site and date are in the body's first line. Type a subject |
+| The email has the wrong subject (e.g. "שלום,") | An old app version: Outlook takes the body's first line as the subject, and since 09.11.2026 that line is the subject. Update the app ("גרסה חדשה מוכנה — רענון") |
 | Fonts look different offline | The app was never opened with reception after installing, so Google Fonts weren't cached. Open it once online |
 | The install hint doesn't show on iPad | It shows only in Safari, over HTTPS, when the app isn't installed and the hint hasn't been dismissed (`localStorage["vasa-install-hint"]`) |
 

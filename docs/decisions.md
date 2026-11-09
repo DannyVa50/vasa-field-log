@@ -2,6 +2,11 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 09.11.2026 — Email subject
+
+- **Subject: "מסמכי שדה מיום דיגום <date> <site>"** (Danny), e.g. "מסמכי שדה מיום דיגום 08.11.2026 ארטיק נס ציונה".
+- Rami's email of 08.11.2026, sent through Outlook on the iPad, arrived with the subject "שלום," — the body's first line. Outlook ignores the share-sheet `title`. Engineering choice: the subject is now also the body's first line, so it's right in Outlook and in any app that does use `title`.
+
 ## 29.10.2026 — Change log in the client Excel (ISRAC traceability)
 
 - ISRAC (Natasha Ben Avraham, 04.08.2026) asked that changes to technical records made on a tablet be traceable, even before the record is closed, as with paper records. A review against ISO/IEC 17025 §7.5.2 found the app meets the core requirement (original value, new value, time, what changed, from the first moment, not deletable in the app) with gaps: (1) the log lived only on the iPad, (2) "who" is always sampler 1, not the actual editor, (3) for signatures / sketch / photo only "exists / signed / cleared" is kept, not the previous image, and strokes added to an existing sketch aren't logged.
