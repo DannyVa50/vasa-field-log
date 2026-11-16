@@ -2,6 +2,23 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 16.11.2026 — Active soil gas (forms 59.1 and 59), stage 1
+
+Danny asked to extend the app to active soil-gas surveys: well installation (form 59.1, edition 6) and sampling (form 59, edition 11). Sources: the two forms, WI 40002 (edition 14) with appendices A/B/C, and the Ministry's active soil-gas guidelines (version 2, 04.07.2021). Decisions:
+
+- **Same app, a record type** chosen when a record is created: soil, or soil gas (Danny approved extending the app rather than a separate one).
+- **One record per gas survey** covering installation and sampling, even on different days (Danny).
+- **Installation and sampling are sometimes on different iPads / by different samplers** (Danny). Planned: the installation email carries a third data file, and the second iPad imports it ("ייבוא התקנה": save to Files, pick in the app). The imported installation part is locked, carries an integrity code, a duplicate import is warned, and the import is logged. Not built yet (stage 2).
+- **Sampling without import must also work** (Danny): a "דיגום בלבד" record where the sampler fills only what form 59 holds — site details, the single installation date in the header, probe number and depth per row. In this mode there is **no equilibrium-wait check and no purge-time check** (the sampler's responsibility, Danny).
+- **Forms 59 and 59.1 are used exactly as given, with no new editions and no added fields** (Danny, emphatic). The app collects only what the forms hold. Gaps against the guidelines (installing/sampling lab names, pressures at three times, total purge volume, per-well installation date, GPS device type) are not collected.
+- **Scope:** permanent wells only at first (Danny). **Split** to a secondary lab when needed (Danny).
+- **Rules where the sources disagree** (Danny): shut-in test 7.5–15 inHg (WI 9.8.3.2 and the guidelines; appendix B says 7.5–20); purge flow 150±10 ml/min (WI 9.8.4.3; WI 8.2.3 and appendix B allow wider), so purge minutes come from the 150 ml/min table of appendix C; the cement layer (top 15 cm) is dropped from the app (removed from the WI in 2021; still in appendix B and on form 59.1, where its column prints empty); rain: wait 5 days after ≥12 mm in 24 h (guidelines and WI 10.13.6; WI 9.3.2 says 7), shown as a reminder only.
+- Engineering choices for appendix C lookups: a depth between rows uses the next deeper row; 1–1.5 m uses the 1.5 m row; 1.75" (in appendix A but not C) uses the 2" column. All err towards a longer purge.
+- Stage 2 engineering choices (16.11.2026): the installation data file is JSON with a SHA-256 integrity code; a newer file for an already-imported installation updates that record field by field, logged, rather than creating a second record; drilling methods "דחיקה ישירה – גיאופרוב" / "מקדח ידני" / other, and the canister supplier from the labs list (approved by Danny 16.11.2026).
+- **Email subjects (Danny, 16.11.2026):** "מסמכי שדה מיום התקנה גז קרקע <date> <site>", as in soil; the sampling email follows the same pattern, "מסמכי שדה מיום דיגום גז קרקע <date> <site>".
+- Stage 3 engineering choices: a card per well rather than a table (form 59 has 16 columns); duplicate = a tick on the well (lab duplicate from the same canister, guidelines), split = a second canister on the same well; QC counted on wells with a canister number; the form-59 box "per the Ministry's active soil-gas guidelines" is always ticked; ranges in on-screen hints are written in words ("בין 26 ל-30") because "26–30" reverses in right-to-left text.
+- **Change-log "who" in a gas record** is the sampler of the day the change belongs to: installation fields and the installation signature → the installation sampler; everything else → the sampling sampler, or the installation sampler until one is chosen.
+
 ## 09.11.2026 — Email subject
 
 - **Subject: "מסמכי שדה מיום דיגום <date> <site>"** (Danny), e.g. "מסמכי שדה מיום דיגום 08.11.2026 ארטיק נס ציונה".

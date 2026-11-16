@@ -2,6 +2,15 @@
 
 Status as of 17.10.2026. Items are roughly in priority order. None is committed to; Danny decides.
 
+## Active soil gas — remaining stages (started 16.11.2026)
+
+Stage 1 (record type, shared details, installation and sampling headers, gas handover) is built on branch `soil-gas-stage1`. Remaining, in order — see [decisions](decisions.md#16112026--active-soil-gas-forms-591-and-59-stage-1):
+
+- **Stage 2 — installation (form 59.1): built 16.11.2026, not yet tested on an iPad** (Outlook attachment → Files → "ייבוא התקנה" picker can only be tested there). Scope was: wells table (times, PID in the borehole, permeability ≤7.5 inHg at 100 ml/min, sand / granular bentonite / wet bentonite ticks, probe depth, soil profile, notes; the cement column prints empty), checks, PDF on the official form (measure coordinates), installation data file in the email + "ייבוא התקנה" on another iPad (locked, integrity code, duplicate warning, logged).
+- **Stage 3 — sampling (form 59): built 16.11.2026.** Scope was: wells carried over from installation (or typed in manual mode), canister, vacuum, purge, IPA, times, canister pressure, TO-15, notes; checks (≥8 h equilibrium and purge minutes from appendix C — full mode only; shut-in 7.5–15 inHg with change ≤0.5; canister start 26–30 / end 3–5 inHg; purge flow 150±10); QC (from 10 samples: duplicate, equipment blank, air blank); split custody to a secondary lab; PDF.
+- **Stage 4 — delivery: built 16.11.2026** (email and the 72-hour check in stage 3; client Excel). Scope was: handover within 72 h, email text, file names, client Excel for gas.
+- **Stage 5 — pilot:** browser test, one real survey alongside paper, user guide (Hebrew), email to samplers.
+
 ## Sync between devices
 
 **Limit:** records live only on the device that created them. The office route doesn't work across devices: the secretary can't open the field team's record on another device to get the lab's signature. The two ways that work today are (a) the lab signs on the field iPad, or (b) the iPad is brought to the office.

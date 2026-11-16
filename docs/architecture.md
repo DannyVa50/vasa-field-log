@@ -23,6 +23,7 @@ There is one global, `S`: the **open sampling day** (a "record"). The shape come
 ```js
 {
   v: 1,                      // bumped each time a locked record is reopened
+  kind: "soil",              // "soil" | "gas" — chosen when the record is created (newDocDialog); old records normalize to "soil"
   id: "day-2026-10-17-1a2b3c4d",
   locked: false,
   updated: "",               // ISO timestamp of the last save; "" = pristine (never saved)
@@ -100,6 +101,62 @@ The main custody keeps its pre-split labels and keys, so its change log continue
 
 Derived values: `cocRows()` (samples with `toCoc`), `splitRows()` (samples with `toSplit`), `custodyRows(isSplit)` and `hasSplit()` (above), `allTests()` (fixed + named extras), and `qcNeeded()` (see [domain.md](domain.md)). `qcNeeded()` counts custody rows without the duplicates as `n`, and reports `haveDup`, `haveSpl` and `badDup` (duplicates marked for VOC or TPH GRO).
 
+### Soil-gas records (`kind: "gas"`)
+
+A gas record is one active soil-gas survey: installation (form 59.1) and sampling (form 59), usually on different days. `S.gas` (from `blankGas(mode)`; present, blank, on every record, and filled in by `normalize()`):
+
+```js
+gas: {
+  mode: "full",            // "full" — installation is recorded here; "manual" — sampling only, installation details typed from form 59
+  inst: { date, s1, weather: [], method, methodOther, boreDia, tubeType, tubeDia, probe,
+          pid, lamp, pidOpen, calLab, cal100 },                    // form 59.1 header, installation day
+  samp: { date, s1, weather: [], instDate /* manual mode */, tube /* manual mode */, purgeVols,
+          canSupplier, canSupplierOther, canDate, pid, lamp, calLab, cal100, deviation /* "אין" | "יש" */ },
+  wells: [ blankWell() ... ],   // one row per well: installation fields (form 59.1) and sampling fields (form 59)
+  blanks: [ blankBlank() ... ], // EB (material blank, also counts as air blank) / AB (air blank) canisters
+  imported: null           // {from, by, exportedAt, at, file} when the installation came from another iPad's data file
+}
+```
+
+A well (`blankWell`): `{id, name, tStart, tEnd, pidHole, perm, sand, bentGran, bentWet, depth, profile, note, auto: []}` — the form-59.1 columns minus cement (dropped, Danny 16.11.2026; the column prints empty). `WELL_LABEL` names the fields for the log and for re-import diffs. `setWell(w, k, v, part)` logs under `gas.well.<part>.<id>.<k>`; `addWell` names the new well from the previous one (`nextWellName`: SG-3 → SG-4) and pre-fills the start time, both in `auto` (a first edit is not a change). `dropLastWell` logs only if the row had data. Checks (`wellInstIssues`): permeability > 7.5 inHg, probe depth < 1 m, end before start, and (once the end time is in) not all fill layers ticked. The bore-diameter field shows the appendix-A fill volume (`FILL_CC`).
+
+**Installation data file (cross-iPad).** `instFileBlob()` writes `{type:"vasa-gas-install", v, exportedAt, from: record id, by: installer, head: INST_HEAD_LABEL keys, inst, wells: install fields only, sig, changes, code}`; `code` is SHA-256 (`crypto.subtle`) of the JSON of everything else, so a hand-edited or damaged file is refused. It is not protection against someone recomputing the code. It goes out as a mail attachment (`instData`) or via "קובץ נתוני התקנה". `importInstall()` (records tab, "ייבוא התקנה") picks a file, `readInstFile` checks type and code, then `importInstallFile`:
+- the source record is on this device → offer to open it;
+- already imported (`gas.imported.from` matches) → `dupDialog`: open it, or, if the file is newer and the record isn't locked, `updateFromInstall`, which overwrites the installation part and logs every changed field (`עדכון מקובץ התקנה — …`, by the installer), wells added/removed, the installer's own log entries since, and one summary entry; sampling fields of existing wells are untouched;
+- otherwise a new gas record is built from the file (its change log carried over, plus a "ייבוא התקנה מקובץ" entry) and opened on the sampling tab.
+
+In an imported record the installation part is read-only: `instRO(build)` sets `roInst` while building those cards, and `RO()` is `S.locked || roInst`; the installer's signature shows as an image, not a pad. Shared details (`S.head`) stay editable.
+
+```js
+```
+
+- Shared with soil, in `S.head`: site, address, client, contact, billTo, approver, accredited, planDeclared, planShown, and the lab keys. `head.date` / `head.dayLetter` are blank in a gas record. Use `recDate(d)` for the record's date (sampling date, else installation date) — `meta()` and `docTitle()` do.
+- Signatures: `sigs.gi` (installation sampler) and `sigs.gs` (sampling sampler); handover signatures are the soil ones (`by`, `lab`).
+- In full mode the sampling header shows the installation date and "tubing type and diameter" read-only from `inst` (`fixedField`); in manual mode they are typed (`samp.instDate`, `samp.tube`).
+- Gas field setters go through `setSub` with keys `gas.inst.<k>` / `gas.samp.<k>` (`gsub(part, k, label)`).
+- Tabs: `TABS` entries have an optional `when()`. Soil: יום דיגום, יומן שדה, שרשרת משמורת, משמורת פיצול. Gas: פרטי הסקר (`viewGasHead`), התקנה (`viewInst`, hidden in manual mode), דיגום (`viewSamp`). `render()` falls back to the details tab if the active tab doesn't exist in the open record's type.
+- Handover for gas: a "חריגות אין/יש" card and a no-cooling / 72-hour note replace the soil deviations list and storage card. File generation for gas is not built yet (stages 2–4).
+
+### Sampling (form 59)
+
+Well sampling fields (`SAMP_LABEL`): `can, vol, vacFrom, vacTo` (shut-in), `flow, purgeMin, pidAfter, ipa, sStart, sEnd, canFrom, canTo, to15` (default true), `sNote`, `dup` (lab duplicate from the same canister), `split` + `spCan, spVol, spCanFrom, spCanTo` (second canister on a T-splitter, to the secondary lab). These are not in the installation data file, and `updateFromInstall` never touches them. `viewSamp` shows a card per well (`wellSampCard`) and per blank (`blankCard`); in manual mode the card also has probe number and depth, and wells are added there.
+
+Checks (`wellSampIssues`, Danny's rules 16.11.2026): shut-in start 7.5–15 inHg and drop ≤ 0.5; flow 140–160; canister start 26–30, end 3–5 (also for the split canister and blanks); end before start; IPA not ticked on a sampled well; split ticked without a canister. Full mode only: ≥ 8 h from installation end to sampling start (`eqHours`), and purge minutes ≥ `purgeNeeded(depth, boreDia)` from appendix C at 150 ml/min (`PURGE_150`; deeper row, 1.5 m minimum row, 1.75" → 2"). The header's purge-volume count is compared with `purgeVolsNeeded()` (5 if any well is deeper than 1.5 m, else 3).
+
+QC (`gasQc`, guidelines): only from 10 sampled wells (wells with a canister number); then duplicate and split `ceil(n/20)` each, and at least one blank on the day. Handover: `gasDeadline` shows "deliver by" = last sampling end + 72 h, and warns per lab if the lab received it later.
+
+### Form 59 PDF
+
+`F59` (edition 11, measured from `forms/form-59.pdf`): one template page, 10 rows; more rows repeat the page, "סוף דו"ח" only on the last. `gasCustodyRows(isSplit)`: main = all wells then blanks (a duplicate well notes "חזרה"); split = wells ticked for split with the split canister. Header from `samp` and `head`; installation date and tubing from the installation (or the typed values in manual mode: `gasInstDate`, `gasTube`). The QC boxes are ticked from the data (main form only); deviations ring "אין"/"יש"; the "per the Ministry's guidelines" box is always ticked; the plan boxes follow `planDeclared` / `planShown`. Handover from `HAND.coc` / `HAND.split`. `buildPdf("gcoc" | "gsplit")`.
+
+### Form 59.1 PDF
+
+`F591` (edition 6, measured from `forms/form-59.1.pdf`): one template page, 10 well rows. More wells → the same page again with the full header, "דף X מתוך Y", and the small row number in the margin (`mark`) rewritten (20, 30…). The ISRAC logo is whited out when the job is not accredited. Notes (`inst.notes`) flow into the lines under the table on the last page. `renderInst()`; `buildPdf("inst")`. `put(…, {ltr:true})` draws a left-to-right value (the PID lamp, "11.7 eV") so its words don't swap; `sel()` prefixes such option labels with an LRM for the same reason on screen.
+
+### Gas email
+
+`mailKinds()` returns `GAS_MAIL_KINDS` in a gas record: form 59.1 PDF, the installation data file (not in sampling-only or imported records), form 59 and the split form 59. `gasMailText`: with a form 59 attached it is the sampling email — subject "מסמכי שדה מיום דיגום גז קרקע <date> <site>", sample counts and the handover lines (`handoverLines`, which uses `gasCustodyRows` in a gas record); otherwise the installation email — "מסמכי שדה מיום התקנה גז קרקע <date> <site>" (Danny, 16.11.2026). The subject is also the body's first line. File names: `fileDate(kind)` — installation files by the installation date, the rest by `recDate`.
+
 ## Rendering
 
 `render()` rebuilds the tab bar, the **active tab's whole section**, and the top bar after every `save()`. The views (`viewDay`, `viewLog`, `custodyView(kind)`, `viewHand`, `viewHist`, `viewDocs`) return fresh DOM built with `el(tag, attrs, ...children)`. Inputs commit on `change` (blur or select), not on `input`, so a rebuild never interrupts typing.
@@ -115,7 +172,7 @@ Signatures (`pad`) and the sketch are `<canvas>` elements drawn with pointer eve
 The app keeps a change log because the records are accredited quality records. The rules:
 
 - **Only a change to an existing value is logged.** Typing into an empty field is not a change. Neither is focusing a field without changing it: iPad time and date fields fill themselves on focus, so a touch alone must not be logged.
-- **A change is logged once it settles.** `logChange(label, from, to, key)` keeps a pending entry per key and restarts a 3-second timer (`COMMIT_MS`). Repeated edits keep the **original** `from`, stored raw (array, boolean) so the rules can check its type. `commitChange` writes `{t, who: head.s1, label, from, to}` to `S.changes` (values flattened to strings) only if `isChange(from, to, key)`.
+- **A change is logged once it settles.** `logChange(label, from, to, key)` keeps a pending entry per key and restarts a 3-second timer (`COMMIT_MS`). Repeated edits keep the **original** `from`, stored raw (array, boolean) so the rules can check its type. `commitChange` writes `{t, who: actor(key), label, from, to}` to `S.changes` (values flattened to strings) only if `isChange(from, to, key)`.
 - **`isChange` holds the rules** (Danny, 29.10.2026, from the first round of "האם לתעד שינוי?" answers):
   1. A **first tick** of a checkbox is not a change (`from === false`): "not ticked" is a default, not a value the sampler entered. **Unticking** is logged.
   2. A correction of an existing value is logged; a first entry into an empty field is not.
@@ -125,6 +182,7 @@ The app keeps a change log because the records are accredited quality records. T
 - **Copied values are not changes.** When a new log row inherits the borehole, time, soil or colour, those keys go into `sample.auto`. The first edit of such a key removes it from `auto` without logging.
 - **Pending changes are flushed** (`flushChanges`) before switching records and on `pagehide`, so a change lands in the right record.
 - Unticking, signatures ("signed" / "cleared"), the sketch, deleting rows with data, locking and reopening are all logged.
+- `actor(key)`: in a soil record, `head.s1`. In a gas record, keys `gas.inst.*` and `sig.gi` → the installation sampler; anything else → the sampling sampler, or the installation sampler until one is chosen. Lock / reopen entries use `actor()`.
 - The log cannot be edited or deleted from the UI. `viewHist` shows it, newest first.
 
 **Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026).** When `logChange` sees a change that will be logged (`isChange(origin, to, key)`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
@@ -147,15 +205,15 @@ Each sampling day is a separate record. `localStorage` keys:
 | Key | Content |
 |---|---|
 | `vasa-doc:<id>` | The full record (JSON) |
-| `vasa-index` | Array of `meta()` summaries `{id, title, date, client, n, locked, updated}` for the records list |
+| `vasa-index` | Array of `meta()` summaries `{id, kind, title, date, client, n, locked, updated}` for the records list (`n` = samples, or wells in a gas record) |
 | `vasa-current` | Id of the record that was open last |
 | `vasa-day` | Legacy single-record key from the first prototype. Migrated by `migrateOld()` on first run, then removed |
 | `vasa-install-hint` | `"off"` once the iPad install hint has been dismissed |
 
 - `save()` stamps `updated`, then `persistLocal()` writes the record and index synchronously, then re-renders. A remote push is debounced by 700 ms.
 - If `localStorage` throws (quota), `storageFull` shows a red pill: "the last change was not saved". iOS gives about **5 MB per origin**, and signatures and sketch images are the bulk. See [roadmap](roadmap.md#storage-capacity).
-- **"שמירה ורשומה חדשה"** saves the open record and opens a blank one. A pristine record (`updated === ""`) is never stored.
-- The record title is built by `docTitle()`: `site · date · day letter · sampler 1`.
+- **"שמירה ורשומה חדשה"** saves the open record and opens `newDocDialog`: soil, gas full (installation and sampling), or gas sampling-only. A pristine soil record (`updated === ""`) is never stored. A new gas record is stored at once (still pristine) so a restart reopens it as gas; `switchTo` drops a pristine stored record (`dropLocal`) when leaving it.
+- The record title is built by `docTitle()`: `site · date · day letter · sampler 1`, or for gas `site · גז קרקע · date · sampler`.
 - An installed iOS web app has **its own storage**, separate from Safari's. Removing the icon deletes the records. `navigator.storage.persist()` is requested on startup.
 
 ### Optional remote store (legacy)
@@ -207,6 +265,8 @@ Printed codes follow the form's legend: tool 1 = liner/sleeve, 2 = jar (`TOOL_CO
 - Style 5 (`XS.num`) gives numbers **general** alignment, because in an RTL sheet `horizontal="right"` puts numbers on the left (verified in Excel).
 - Tool and type are written as words (שרוול / צנצנת, חטף / מורכב), not form codes.
 
+
+**Gas records** use `gasWorkbookSheets()` (`buildXlsx` picks by record type): "פרטי הסקר" (shared details, an installation section in full mode — noting an imported installation —, a sampling section, sample/QC counts, handover per lab, notes), "התקנה" (form 59.1 columns, full mode only), "שרשרת משמורת" and, with a split, "משמורת פיצול" (form 59 columns, from `gasCustodyRows`), and the change log (`changesSheet()`, shared with soil). File name "נתוני דיגום גז קרקע <site> <date>" (`gxlsx`).
 ## File delivery
 
 `offerFile(blob, filename)` opens a dialog with every way to get the file, because none of them works everywhere:
