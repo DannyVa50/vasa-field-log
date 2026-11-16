@@ -55,12 +55,12 @@ The only copy of a record is on the device that made it, plus whatever PDFs, Exc
 | Fonts look different offline | The app was never opened with reception after installing, so Google Fonts weren't cached. Open it once online |
 | The install hint doesn't show on iPad | It shows only in Safari, over HTTPS, when the app isn't installed and the hint hasn't been dismissed (`localStorage["vasa-install-hint"]`) |
 
-## A new edition of form 57 or 33.1
+## A new edition of form 57, 33.1, 59.1 or 59
 
-1. Replace `forms/form-57.docx` or `forms/form-33.1.docx`.
+1. Replace the `.docx` in `forms/` (`form-57`, `form-33.1`, `form-59.1`, `form-59`).
 2. Export it to PDF **from Word** (Save As → PDF) under the same name in `forms/`.
 3. Run `python build/embed_forms.py`. It needs `pymupdf` and `Pillow`. It re-renders the pages at 200 DPI into `FORM_PAGES` in `index.html`.
-4. If any cell moved, update the boxes in `F57` / `F33` in `index.html`. Measure them in PDF points from the new export, e.g. with PyMuPDF: `page.get_text("dict")` or `page.get_drawings()` for the cell lines.
+4. If any cell moved, update the boxes in `F57` / `F33` / `F591` (and `F59` from stage 3) in `index.html`. Measure them in PDF points from the new export, e.g. with PyMuPDF: `page.get_text("dict")` or `page.get_drawings()` for the cell lines.
 5. Check page 1 and a continuation page of each form, with long values, and with a non-accredited job (ISRAC logo hidden). Update the edition numbers in README.md and [domain.md](domain.md).
 
 ## What to check on the iPad after a change to files or email
@@ -68,6 +68,7 @@ The only copy of a record is on the device that made it, plus whatever PDFs, Exc
 None of these can be tested on a desktop:
 1. Install from Safari (or open the installed app), turn on Airplane Mode, and confirm the app opens and records are there.
 2. Generate each PDF and the Excel file → share / save to Files works.
+3. Soil gas: send the installation email from Outlook with the data file; on a second iPad save the attachment to Files and import it (רשומות ← ייבוא התקנה). Confirm the picker shows the file and the record opens on the sampling tab.
 3. "שליחה במייל" → "הכנת המייל" → "פתיחת המייל" → choose Mail. Check the attachments, the body, and whether the subject was filled.
 4. Signatures and the sketch draw correctly with a finger and with an Apple Pencil.
 5. Close the app fully, reopen it, and check the records are still there.

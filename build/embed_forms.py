@@ -6,7 +6,7 @@ PDF). Each page is rendered to a palette PNG and written into index.html
 between the FORM-PAGES markers, where the app draws the day's data on top.
 
 When a form gets a new edition: replace the .docx, export it to PDF again,
-run this script, and check that the cell coordinates in F33 / F57 in
+run this script, and check that the cell coordinates in F33 / F57 / F591 / F59 in
 index.html still match (they are PDF points, measured from the export).
 
 usage: python build/embed_forms.py
@@ -19,7 +19,7 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DPI = 200
 COLORS = 128
-FORMS = {"33.1": "form-33.1.pdf", "57": "form-57.pdf"}
+FORMS = {"33.1": "form-33.1.pdf", "57": "form-57.pdf", "59.1": "form-59.1.pdf", "59": "form-59.pdf"}
 
 
 def pages(pdf):

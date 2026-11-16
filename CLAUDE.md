@@ -4,7 +4,7 @@ Guidance for AI agents (and humans) changing this repo. Read this, then [docs/do
 
 ## What this is, in one paragraph
 
-This is a single-file, offline-first PWA. Vasa Ecology samplers use it on iPads to fill the field log (form 57) and the chain of custody (form 33.1) for soil sampling. It produces PDFs drawn onto images of the official forms, a client Excel file, and an email carrying them. The company is ISO/IEC 17025 accredited (no. 294), so the records are **quality records**: the change log and the lock are compliance features, not nice-to-haves. The owner is Danny (danny@vasa-eco.co.il). He makes the product decisions, and they are logged in [docs/decisions.md](docs/decisions.md).
+This is a single-file, offline-first PWA. Vasa Ecology samplers use it on iPads to fill the field log (form 57) and the chain of custody (form 33.1) for soil sampling, and the tubing installation (form 59.1) and chain of custody (form 59) for active soil gas (a record has `kind` "soil" or "gas"). It produces PDFs drawn onto images of the official forms, a client Excel file, and an email carrying them. The company is ISO/IEC 17025 accredited (no. 294), so the records are **quality records**: the change log and the lock are compliance features, not nice-to-haves. The owner is Danny (danny@vasa-eco.co.il). He makes the product decisions, and they are logged in [docs/decisions.md](docs/decisions.md).
 
 ## Hard rules
 
@@ -13,7 +13,7 @@ This is a single-file, offline-first PWA. Vasa Ecology samplers use it on iPads 
 3. **Do not weaken the change log** (`logChange` / `commitChange` / `S.changes`). ISO 17025 requires that a changed value keeps its original, who changed it, and when. The rules are in [docs/architecture.md § Change log](docs/architecture.md#change-log-iso-17025). Every new editable field must go through `setHead` / `setSub` / `setSample` / `setSplit` (or call `logChange` itself), never by assigning to `S` directly from UI code. The log cannot be deleted from the UI. Keep it that way. The "האם לתעד שינוי?" question (`ASK_LOG`) is for learning only: the answer is stored, but it must never stop a change from being logged.
 4. **Locked records are read-only.** `RO()` disables every input. New inputs must pass `disabled:RO()`.
 5. **Old records must still open.** Records persist in `localStorage` across app versions. When you add a field, add it to `blankDay()` / `blankSample()`, and make sure `normalize()` fills it into old records. Never rename or repurpose an existing key without a migration in `normalize()` (see `TEST_OLD` for an example).
-6. **Form coordinates are measured, not guessed.** `F57` / `F33` in `index.html` are PDF-point boxes measured from `forms/*.pdf`. If a printed value lands in the wrong cell, measure from the PDF export (e.g. with PyMuPDF) and fix the box. Don't nudge numbers by eye.
+6. **Form coordinates are measured, not guessed.** `F57` / `F33` / `F591` / `F59` in `index.html` are PDF-point boxes measured from `forms/*.pdf`. If a printed value lands in the wrong cell, measure from the PDF export (e.g. with PyMuPDF) and fix the box. Don't nudge numbers by eye.
 7. **Preserve Danny's decisions** in [docs/decisions.md](docs/decisions.md). Examples: "*** סוף דו"ח ***" always ends a chain of custody, and only the ISRAC logo drops when the job is not accredited. If something there looks wrong, ask; don't "fix" it silently.
 8. **Never put field data in the repo.** The repo is public. Test data stays in the browser or in `exports/` (git-ignored).
 
@@ -25,7 +25,8 @@ Search for the `/* ============ … ============ */` section banners, in this or
 - **change log**, then **records**, **persistence** (localStorage + optional remote db)
 - **derived** (`cocRows`, `splitRows`, `custodyRows` — every form-33.1 row incl. free rows and duplicates, `hasSplit`, `qcNeeded`), then **DOM helpers** (`el`, `field`, `txt`, `sel`, `multi`, `toggle`), then the **signature pad**
 - views: `viewDay`, `sketchCard`, `viewLog`, `custodyView` (main + split), `viewHand`, `viewHist`, `viewDocs`
-- **PDF**: `F57` / `F33` coordinate tables, `renderLog`, `renderCoc`, `pdfFromJpegs`, `buildPdf`
+- **PDF**: `F57` / `F33` / `F59` / `F591` coordinate tables, `renderLog`, `renderCoc`, `renderInst`, `renderGasCoc`, `pdfFromJpegs`, `buildPdf`
+- soil gas: `blankGas` / `blankWell` / `blankBlank`, `viewGasHead`, `viewInst`, `viewSamp`, checks (`wellInstIssues`, `wellSampIssues`, `gasQc`), the installation data file (`instFileBlob`, `importInstall`), `gasWorkbookSheets`, `gasMailText`
 - **Excel**: `workbookSheets`, `workbookBlob`, `zipBlob`, `buildXlsx`
 - **file delivery**: `offerFile`. **Email**: `mailDialog`, `mailText`, `mailFile`
 - **shell**: `TABS`, `render()`. **Installed app**: `setupApp`, `installHint`, then `init()`
