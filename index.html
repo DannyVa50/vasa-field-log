@@ -367,6 +367,8 @@ function blankDay(id){
     /* gi / gs — חתימות הדוגם ביום ההתקנה וביום הדיגום של גז קרקע */
     sigs:{s1:"", s2:"", by:"", lab:"", bySplit:"", labSplit:"", gi:"", gs:""},
     sketch:"", sketchPhoto:"", changes:[],
+    /* גז קרקע: עמודי תעודת הניקיון של הקניסטרים, מצולמים (JPEG data URL). נשמרים מחוץ למסמך היום, כמו צילום השרטוט */
+    canCert:[],
     gas:blankGas()
   };
 }
@@ -398,6 +400,7 @@ function normalize(d){
     sigs:{...b.sigs, ...(d.sigs||{})}};
   /* רשומות מלפני גז הקרקע הן רשומות קרקע */
   n.kind = d.kind==="gas" ? "gas" : "soil";
+  n.canCert = Array.isArray(d.canCert) ? d.canCert : [];
   const g=d.gas||{};
   n.gas={...b.gas, ...g, mode:g.mode==="manual"?"manual":"full",
     inst:{...b.gas.inst, ...(g.inst||{})}, samp:{...b.gas.samp, ...(g.samp||{})},
@@ -609,12 +612,12 @@ function save(){
 const refsFor = id => ({
   day:db.doc(`days/${id}`), sig:db.doc(`days/${id}/sig/signatures`),
   log:db.doc(`days/${id}/log/changes`), shot:db.doc(`days/${id}/shot/sketch`),
-  idx:db.doc(`index/${id}`)});
+  cert:db.doc(`days/${id}/shot/cert`), idx:db.doc(`index/${id}`)});
 async function pushRemote(){
   if(!db || pristine(S)) return;
   /* נלכד מראש — אם הדוגם עובר רשומה באמצע, הכתיבה נשארת ברשומה הנכונה */
   const r=refsFor(S.id), m=meta(S);
-  const {sigs, sketch, sketchPhoto, changes, ...rest} = S;
+  const {sigs, sketch, sketchPhoto, canCert, changes, ...rest} = S;
   try{
     await r.day.set(rest);
     await r.sig.set({...sigs, sketch});
@@ -622,14 +625,16 @@ async function pushRemote(){
     await r.shot.set({photo:sketchPhoto||""});
     await r.idx.set(m);
     setPill("synced");
-  }catch(e){ setPill("local"); }
+  }catch(e){ setPill("local"); return; }
+  /* בנפרד ואחרון: מסמך גדול (עד CERT_MAX עמודים) לא יעצור את שמירת היום עצמו */
+  if(isGas()) try{ await r.cert.set({pages:canCert||[]}); }catch(e){}
 }
 
 async function attachRemote(){
   if(!db) return;
   const id=S.id, r=refsFor(id);
   try{
-    const [d,g,l,p]=await Promise.all([r.day.get(),r.sig.get(),r.log.get(),r.shot.get()]);
+    const [d,g,l,p,c]=await Promise.all([r.day.get(),r.sig.get(),r.log.get(),r.shot.get(),r.cert.get()]);
     if(S.id!==id) return;
     /* data() מוחזר מוקפא — עותק, כדי שאפשר יהיה להמשיך לערוך */
     suppress=true;
@@ -638,6 +643,7 @@ async function attachRemote(){
     if(g.exists){ const {sketch,...sg}=structuredClone(g.data()); next.sigs={...next.sigs,...sg}; next.sketch=sketch||""; }
     if(l.exists) next.changes=structuredClone(l.data().items||[]);
     if(p.exists) next.sketchPhoto=p.data().photo||"";
+    if(c.exists) next.canCert=[...(c.data().pages||[])];
     S=normalize(next);
     suppress=false;
     if(d.exists) persistLocal();
@@ -1126,6 +1132,7 @@ function gasFilesCard(where){
       own&&inst?el("button",{class:"btn ghost",onclick:makeInstFile},"קובץ נתוני התקנה"):null,
       inst?null:el("button",{class:"btn ghost",onclick:()=>makePdf("gcoc")},"PDF טופס 59"),
       split?el("button",{class:"btn ghost",onclick:()=>makePdf("gsplit")},"PDF משמורת פיצול"):null,
+      !inst&&S.canCert.length?el("button",{class:"btn ghost",onclick:()=>makePdf("cert")},"PDF תעודת ניקיון"):null,
       inst?null:el("button",{class:"btn ghost",onclick:makeXlsx},"Excel ללקוח"),
       el("span",{class:"spacer"}),
       el("button",{class:"btn",onclick:mailDialog},"שליחה במייל")),
@@ -1163,6 +1170,7 @@ function viewSamp(){
     gasCal("samp",pre),
     el("div",{class:"grid wide",style:"margin-top:16px"},
       pad("gs",`חתימת הדוגם — ${o.s1||"לא נבחר"}`,S.sigs))));
+  v.append(certCard());
   const pv=purgeVolsNeeded();
   if(pv && o.purgeVols && o.purgeVols!==pv) v.append(el("div",{class:"card"},el("div",{class:"note warn"},
     el("b",{},"מס׳ נפחי השטיפה: "),`נבחר ${o.purgeVols}, ולפי עומקי הבארות נדרש ${pv} — הוראת עבודה 9.8.4.2.`)));
@@ -1248,6 +1256,8 @@ function wellSampIssues(w, full){
     if(outside(num(w[k]),rng)) r.push(`${label} ${w[k]} — מחוץ לטווח ${rng[0]} עד ${rng[1]} אינץ׳ כספית`);
   if(w.sStart && w.sEnd && w.sEnd<w.sStart) r.push("שעת סיום הדיגום לפני שעת ההתחלה");
   if(sampled && !w.ipa) r.push("לא סומנה בדיקת IPA");
+  /* כפר הס, 17.11.2026: TO-15 בוטל בטעות בבאר הראשונה — דני (18.11.2026) */
+  if(sampled && !w.to15) r.push("לא סומן TO-15");
   if(w.split && !String(w.spCan||"").trim()) r.push("סומן פיצול בלי מס׳ קניסטר");
   return r;
 }
@@ -1345,6 +1355,81 @@ function blankCard(b){
       t("note","הערות")),
     el("div",{class:"chips",style:"margin-top:10px"},toggle(b.to15,x=>setBlank(b,"to15",x),"TO-15")),
     bad.length ? el("div",{class:"note warn",style:"margin-top:10px"},bad.join(" · ")) : null);
+}
+
+/* ============ תעודת ניקיון הקניסטרים — דני (18.11.2026): לתייק את התעודה מהמעבדה, ולצרף למייל ============
+   כל עמוד מצולם במצלמה ועובר עיבוד כמו בסריקה: גווני אפור, הנייר מולבן והכתב מוכהה. ב-PDF — עמוד לכל צילום */
+const CERT_MAX=6, CERT_PX=1600;
+function scanImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("לא ניתן לקרוא את התמונה")); };
+    im.onload=()=>{
+      URL.revokeObjectURL(url);
+      const sc=Math.min(1,CERT_PX/Math.max(im.width,im.height));
+      const cv=document.createElement("canvas"); cv.width=Math.round(im.width*sc); cv.height=Math.round(im.height*sc);
+      const g=cv.getContext("2d"); g.drawImage(im,0,0,cv.width,cv.height);
+      const d=g.getImageData(0,0,cv.width,cv.height), p=d.data, n=p.length/4, hist=new Uint32Array(256), Y=new Uint8Array(n);
+      for(let i=0;i<n;i++){ const y=(p[4*i]*.299+p[4*i+1]*.587+p[4*i+2]*.114)|0; Y[i]=y; hist[y]++; }
+      /* נקודת שחור — האחוזון ה-1 (הכתב); נקודת לבן — האחוזון ה-90 (הנייר תופס את רוב התמונה) */
+      const pct=q=>{ let s=0; for(let v=0;v<256;v++){ s+=hist[v]; if(s>=n*q) return v; } return 255; };
+      const lo=pct(.01), hi=Math.max(lo+40,pct(.9)), k=255/(hi-lo);
+      for(let i=0;i<n;i++){ const v=Math.max(0,Math.min(255,(Y[i]-lo)*k)); p[4*i]=p[4*i+1]=p[4*i+2]=v; }
+      g.putImageData(d,0,0);
+      res(cv.toDataURL("image/jpeg",.6));
+    };
+    im.src=url;
+  });
+}
+function certCard(){
+  const pages=S.canCert, full=pages.length>=CERT_MAX;
+  const count=n=>n>1?`${n} עמודים`:n?"עמוד אחד":"";
+  const add=async f=>{
+    if(!f || RO()) return;
+    try{
+      const url=await scanImage(f);
+      if(S.canCert.length>=CERT_MAX) return;
+      /* הוספת עמוד היא מילוי ראשון, לא שינוי — לא נרשמת. הסרת עמוד נרשמת בתיעוד */
+      S.canCert=[...S.canCert,url]; save();
+    }catch(e){ alert((e&&e.message)||e); }
+  };
+  const input=capture=>{
+    const i=el("input",{type:"file",accept:"image/*",hidden:true,...(capture?{capture:"environment"}:{})});
+    i.addEventListener("change",()=>{ const f=i.files&&i.files[0]; i.value=""; add(f); });
+    return i;
+  };
+  const cam=input(true), lib=input(false);
+  return el("div",{class:"card"},
+    el("h2",{},"תעודת ניקיון קניסטרים"),
+    el("div",{class:"sub"},"התעודה שמגיעה עם הקניסטרים מהמעבדה. מצלמים כל עמוד על משטח ישר ובאור טוב — האפליקציה הופכת את הצילום לסריקה בגווני אפור. "+
+      "התעודה מצורפת למייל כקובץ PDF נפרד"),
+    el("div",{class:"bar",style:"margin-top:0"},
+      el("button",{class:"btn",type:"button",disabled:RO()||full,onclick:()=>cam.click()},pages.length?"סריקת עמוד נוסף":"סריקת התעודה"),
+      el("button",{class:"btn ghost",type:"button",disabled:RO()||full,onclick:()=>lib.click()},"מהתמונות"),
+      el("span",{class:"spacer"}),
+      pages.length?el("span",{class:"pill"},count(pages.length)):null, cam, lib),
+    full?el("div",{class:"sub",style:"margin-top:8px"},`עד ${CERT_MAX} עמודים`):null,
+    pages.length?el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px"},
+      ...pages.map((src,i)=>el("div",{},
+        el("img",{class:"shot",src,alt:`תעודת ניקיון — עמוד ${i+1}`}),
+        el("div",{class:"bar",style:"margin-top:6px"},el("span",{class:"hint"},`עמוד ${i+1}`),el("span",{class:"spacer"}),
+          el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>{
+            if(!confirm(`להסיר את עמוד ${i+1} של תעודת הניקיון?`)) return;
+            logChange(`תעודת ניקיון קניסטרים — הסרת עמוד ${i+1}`, count(S.canCert.length), count(S.canCert.length-1)||"הוסרה", "canCert.del");
+            S.canCert=S.canCert.filter((_,j)=>j!==i); save();
+          }},"הסר"))))):null);
+}
+/* PDF של התעודה: רוחב A4, הגובה לפי יחס הצילום */
+async function certPdf(){
+  const out=[];
+  for(const src of S.canCert){
+    const im=await loadImg(src); if(!im) continue;
+    const bin=atob(src.slice(src.indexOf(",")+1)), jpeg=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) jpeg[i]=bin.charCodeAt(i);
+    const w=595.28;
+    out.push({jpeg, w, h:+(w*im.naturalHeight/im.naturalWidth).toFixed(2), px:im.naturalWidth, py:im.naturalHeight});
+  }
+  return pdfFromJpegs(out);
 }
 
 /* ============ sketch — draw, or photograph a paper sketch ============ */
@@ -1857,7 +1942,8 @@ function viewHist(){
    ולכן הטפסים מצוירים על canvas ונארזים לקובץ PDF כאן, בלי תלות בדיאלוג ההדפסה. */
 const KIND_NAME={log:"יומן שדה", coc:"שרשרת משמורת", split:"שרשרת משמורת פיצול", xlsx:"נתוני דיגום",
   inst:"התקנת צנרת גז קרקע", instData:"נתוני התקנה גז קרקע",
-  gcoc:"שרשרת משמורת גז קרקע", gsplit:"שרשרת משמורת פיצול גז קרקע", gxlsx:"נתוני דיגום גז קרקע"};
+  gcoc:"שרשרת משמורת גז קרקע", gsplit:"שרשרת משמורת פיצול גז קרקע", gxlsx:"נתוני דיגום גז קרקע",
+  cert:"תעודת ניקיון קניסטרים"};
 /* תאריך בשם הקובץ: בקרקע — יום הדיגום. בגז — קובצי ההתקנה לפי יום ההתקנה, והשאר לפי יום הדיגום */
 const fileDate = kind => !isGas() ? S.head.date : (kind==="inst"||kind==="instData") ? S.gas.inst.date : recDate(S);
 function fileName(kind){
@@ -2367,7 +2453,7 @@ async function makePdf(kind){
   if(pdfBusy) return;
   pdfBusy=true;
   try{
-    await offerFile(await buildPdf(kind), fileName(kind)+".pdf");
+    await offerFile(kind==="cert" ? await certPdf() : await buildPdf(kind), fileName(kind)+".pdf");
   }catch(e){ alert("יצירת ה-PDF נכשלה: "+((e&&e.message)||e)); }
   finally{ pdfBusy=false; }
 }
@@ -2821,12 +2907,13 @@ const GAS_MAIL_KINDS=[
   {kind:"instData", label:"נתוני התקנה — לאייפד של הדוגם שידגום",     def:()=>S.gas.wells.length>0 && !S.gas.samp.date, when:()=>S.gas.mode!=="manual" && !S.gas.imported},
   {kind:"gcoc",     label:"טופס 59 שרשרת משמורת — PDF",               def:()=>!!S.gas.samp.date},
   {kind:"gsplit",   label:"טופס 59 משמורת פיצול — PDF",               def:()=>!!S.gas.samp.date, when:hasSplit},
+  {kind:"cert",     label:"תעודת ניקיון קניסטרים — PDF",              def:()=>true, when:()=>S.canCert.length>0},
   {kind:"xlsx",     label:"Excel ללקוח",                               def:()=>false}
 ];
 const mailKinds = () => isGas() ? GAS_MAIL_KINDS : MAIL_KINDS;
 async function mailFile(kind){
   if(kind==="instData") return {name:fileName(kind)+".json", blob:await instFileBlob()};
-  const blob = kind==="xlsx" ? buildXlsx() : await buildPdf(kind);
+  const blob = kind==="xlsx" ? buildXlsx() : kind==="cert" ? await certPdf() : await buildPdf(kind);
   return {name:fileName(kind)+(kind==="xlsx"?".xlsx":".pdf"), blob};
 }
 /* מצב המסירה לכל שרשרת משמורת שיש בה דגימות. נמסרה = הדוגם חתם במסירה ונציג המעבדה חתם בקבלה */
@@ -2851,7 +2938,7 @@ function handoverLines(){
    נושא — דני (16.11.2026): "מסמכי שדה מיום התקנה גז קרקע <תאריך> <אתר>", כמו בקרקע; בדיגום — "מיום דיגום גז קרקע" */
 function gasMailText(names){
   const h=S.head, g=S.gas, site=(h.site||"").trim()||"ללא שם אתר";
-  const samp=names.some(n=>n.startsWith(KIND_NAME.gcoc)||n.startsWith(KIND_NAME.gsplit));
+  const samp=names.some(n=>[KIND_NAME.gcoc,KIND_NAME.gsplit,KIND_NAME.cert].some(k=>n.startsWith(k)));
   const o=samp?g.samp:g.inst, day=samp?"דיגום":"התקנה";
   const subject=`מסמכי שדה מיום ${day} גז קרקע ${fmtFull(o.date)} ${site}`;
   const q=gasQc(), nb=g.blanks.length;

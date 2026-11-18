@@ -2,6 +2,15 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 18.11.2026 — Soil gas after the first field use
+
+Reviewed the first two real surveys (Kfar Hess, Tal Shahar). Danny approved only these changes:
+
+- **TO-15 warning** (Danny): a well with a canister number but TO-15 unticked shows a warning, like IPA. At Kfar Hess TO-15 was unticked by mistake on the first well.
+- **Canister cleaning certificate** (Danny): the certificate from the lab is filed with the survey. The sampling tab has a card to photograph each page; the app turns the photo into a grayscale "scan" (black point at the 1st percentile, white point at the 90th). The pages become a separate PDF (A4 width, height by aspect) offered in the email. Pages are kept out of the day document (`canCert`, remote doc `days/{id}/shot/cert`), like the sketch photo; up to 6 pages of ~1600 px. Adding a page is a first entry (not logged); removing one is logged.
+- **Record order:** Rami saw the Kfar Hess record at the bottom of the list. The list was already sorted by date, newest first. The record sat at the bottom because its sampling date had been set to 18.08 by mistake. No change was made.
+- Not approved for now: date-sanity warnings, the installation-day email fix, and a missing-signature reminder.
+
 ## 16.11.2026 — Active soil gas (forms 59.1 and 59), stage 1
 
 Danny asked to extend the app to active soil-gas surveys: well installation (form 59.1, edition 6) and sampling (form 59, edition 11). Sources: the two forms, WI 40002 (edition 14) with appendices A/B/C, and the Ministry's active soil-gas guidelines (version 2, 04.07.2021). Decisions:
