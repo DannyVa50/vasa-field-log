@@ -9,7 +9,8 @@ Reviewed the first two real surveys (Kfar Hess, Tal Shahar). Danny approved only
 - **TO-15 warning** (Danny): a well with a canister number but TO-15 unticked shows a warning, like IPA. At Kfar Hess TO-15 was unticked by mistake on the first well.
 - **Canister cleaning certificate** (Danny): the certificate from the lab is filed with the survey. The sampling tab has a card to photograph each page; the app turns the photo into a grayscale "scan" (black point at the 1st percentile, white point at the 90th). The pages become a separate PDF (A4 width, height by aspect) offered in the email. Pages are kept out of the day document (`canCert`, remote doc `days/{id}/shot/cert`), like the sketch photo; up to 6 pages of ~1600 px. Adding a page is a first entry (not logged); removing one is logged.
 - **Record order:** Rami saw the Kfar Hess record at the bottom of the list. The list was already sorted by date, newest first. The record sat at the bottom because its sampling date had been set to 18.08 by mistake. No change was made.
-- Not approved for now: date-sanity warnings, the installation-day email fix, and a missing-signature reminder.
+- **Files per day** (Danny): at the end of the installation day only form 59.1 and the installation data file can be sent. At the end of the sampling day: form 59.1, custody form 59 (and the split form when there is one), Excel, and the cleaning certificate when there is one, all ticked by default. The sampling day starts when a sampling date is entered; an imported record and a sampling-only record are always on the sampling day. The email subject follows the day, which also fixes the Tal Shahar email (installation sent with an empty form 59, so it went out as a sampling email with no date).
+- Not approved for now: date-sanity warnings and a missing-signature reminder.
 
 ## 16.11.2026 — Active soil gas (forms 59.1 and 59), stage 1
 
