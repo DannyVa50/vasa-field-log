@@ -2901,14 +2901,17 @@ const MAIL_KINDS=[
   {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:hasSplit},
   {kind:"xlsx",  label:"Excel ללקוח",              def:()=>false}
 ];
-/* גז קרקע: קובצי ההתקנה. שרשרת המשמורת (טופס 59) ו-Excel — שלבים 3–4 */
+/* גז קרקע — דני (18.11.2026): בסוף יום ההתקנה נשלחים רק טופס ההתקנה וקובץ הנתונים.
+   בסוף יום הדיגום: טופס ההתקנה, שרשרת משמורת (ופיצול כשיש), Excel, ותעודת ניקיון כשיש.
+   יום הדיגום מתחיל כשנקבע תאריך דיגום; ברשומה מיובאת ובדיגום בלבד — תמיד יום דיגום */
+const gasSampDay = () => S.gas.mode==="manual" || !!S.gas.imported || !!S.gas.samp.date;
 const GAS_MAIL_KINDS=[
-  {kind:"inst",     label:"טופס 59.1 התקנה — PDF",                    def:()=>S.gas.wells.length>0, when:()=>S.gas.mode!=="manual"},
-  {kind:"instData", label:"נתוני התקנה — לאייפד של הדוגם שידגום",     def:()=>S.gas.wells.length>0 && !S.gas.samp.date, when:()=>S.gas.mode!=="manual" && !S.gas.imported},
-  {kind:"gcoc",     label:"טופס 59 שרשרת משמורת — PDF",               def:()=>!!S.gas.samp.date},
-  {kind:"gsplit",   label:"טופס 59 משמורת פיצול — PDF",               def:()=>!!S.gas.samp.date, when:hasSplit},
-  {kind:"cert",     label:"תעודת ניקיון קניסטרים — PDF",              def:()=>true, when:()=>S.canCert.length>0},
-  {kind:"xlsx",     label:"Excel ללקוח",                               def:()=>false}
+  {kind:"inst",     label:"טופס 59.1 התקנה — PDF",                    def:()=>true, when:()=>S.gas.mode!=="manual"},
+  {kind:"instData", label:"נתוני התקנה — לאייפד של הדוגם שידגום",     def:()=>true, when:()=>!gasSampDay()},
+  {kind:"gcoc",     label:"טופס 59 שרשרת משמורת — PDF",               def:()=>true, when:gasSampDay},
+  {kind:"gsplit",   label:"טופס 59 משמורת פיצול — PDF",               def:()=>true, when:()=>gasSampDay() && hasSplit()},
+  {kind:"xlsx",     label:"Excel ללקוח",                               def:()=>true, when:gasSampDay},
+  {kind:"cert",     label:"תעודת ניקיון קניסטרים — PDF",              def:()=>true, when:()=>gasSampDay() && S.canCert.length>0}
 ];
 const mailKinds = () => isGas() ? GAS_MAIL_KINDS : MAIL_KINDS;
 async function mailFile(kind){
@@ -2938,7 +2941,7 @@ function handoverLines(){
    נושא — דני (16.11.2026): "מסמכי שדה מיום התקנה גז קרקע <תאריך> <אתר>", כמו בקרקע; בדיגום — "מיום דיגום גז קרקע" */
 function gasMailText(names){
   const h=S.head, g=S.gas, site=(h.site||"").trim()||"ללא שם אתר";
-  const samp=names.some(n=>[KIND_NAME.gcoc,KIND_NAME.gsplit,KIND_NAME.cert].some(k=>n.startsWith(k)));
+  const samp=gasSampDay();
   const o=samp?g.samp:g.inst, day=samp?"דיגום":"התקנה";
   const subject=`מסמכי שדה מיום ${day} גז קרקע ${fmtFull(o.date)} ${site}`;
   const q=gasQc(), nb=g.blanks.length;
@@ -3008,6 +3011,8 @@ function mailDialog(){
     card.append(el("h2",{},"שליחה במייל"));
     if(state!=="ready"){
       card.append(el("div",{class:"sub"},"בחר את הקבצים לצירוף למייל"),
+        isGas() && !gasSampDay() ? el("div",{class:"note",style:"margin:0 0 12px"},
+          "יום ההתקנה: נשלחים טופס ההתקנה וקובץ הנתונים. מסמכי הדיגום נפתחים אחרי שממלאים תאריך דיגום בלשונית הדיגום") : null,
         el("div",{class:"picks"},...opts.map(o=>el("button",{class:"chip",type:"button",
           "aria-pressed":String(pick.has(o.kind)),disabled:state==="busy",
           onclick:()=>{ pick.has(o.kind)?pick.delete(o.kind):pick.add(o.kind); draw(); }},
