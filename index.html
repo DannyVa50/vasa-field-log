@@ -334,6 +334,8 @@ function blankWell(name){
     tStart:"", tEnd:"", pidHole:"", perm:"", sand:false, bentGran:false, bentWet:false, depth:"", profile:"", note:"",
     can:"", vol:"", vacFrom:"", vacTo:"", flow:"", purgeMin:"", pidAfter:"", ipa:false, sStart:"", sEnd:"",
     canFrom:"", canTo:"", to15:true, sNote:"", dup:false, split:false, spCan:"", spVol:"", spCanFrom:"", spCanTo:"",
+    /* נ"צ (ITM), דיוק במטרים, שעה, מקור (GPS / ידני), ובאיזה יום נמדד (inst / samp) — ראה COORD_KEYS */
+    gx:"", gy:"", gacc:"", gt:"", gsrc:"", gday:"",
     auto:[]};
 }
 /* בלאנק: EB — בלאנק חומרים (מחובר לרכבת הדיגום, משמש גם כבלאנק רקע); AB — בלאנק רקע, אוויר באתר */
@@ -371,6 +373,8 @@ function blankDay(id){
     sketch:"", sketchPhoto:"", changes:[],
     /* גז קרקע: עמודי תעודת הניקיון של הקניסטרים, מצולמים (JPEG data URL). נשמרים מחוץ למסמך היום, כמו צילום השרטוט */
     canCert:[],
+    /* קרקע: נ"צ לכל קידוח — {מס' קידוח: {x, y, acc, t, src}}. נכנס לאקסל (יומן שדה) בלבד, לא לטפסים */
+    coords:{},
     gas:blankGas()
   };
 }
@@ -403,6 +407,7 @@ function normalize(d){
   /* רשומות מלפני גז הקרקע הן רשומות קרקע */
   n.kind = d.kind==="gas" ? "gas" : "soil";
   n.canCert = Array.isArray(d.canCert) ? d.canCert : [];
+  n.coords = d.coords && typeof d.coords==="object" && !Array.isArray(d.coords) ? d.coords : {};
   const g=d.gas||{};
   n.gas={...b.gas, ...g, mode:g.mode==="manual"?"manual":"full",
     inst:{...b.gas.inst, ...(g.inst||{})}, samp:{...b.gas.samp, ...(g.samp||{})},
@@ -1008,6 +1013,7 @@ const WELL_LABEL={name:"שם הבאר", tStart:"שעת תחילת ההתקנה",
   perm:"מבחן חדירות", sand:"חול קוורץ ובדיקת עומק", bentGran:"בנטונייט גרגרים", bentWet:"אבקת בנטונייט רטוב",
   depth:"עומק הגשש", profile:"תאור חתך הקרקע", note:"הערות"};
 const INST_WELL=Object.keys(WELL_LABEL);
+const COORD_KEYS=["gx","gy","gacc","gt","gsrc","gday"];
 /* שדות הדיגום בבאר (טופס 59) — אינם נכנסים לקובץ נתוני ההתקנה */
 const SAMP_LABEL={can:"מס׳ הקניסטר", vol:"נפח הקניסטר", vacFrom:"מבחן אטימות — מ-", vacTo:"מבחן אטימות — עד",
   flow:"ספיקת המשאבה", purgeMin:"משך השטיפה", pidAfter:"PID לאחר הדיגום", ipa:"בדיקת IPA", sStart:"שעת התחלת הדיגום",
@@ -1117,6 +1123,7 @@ function viewInst(){
       el("span",{class:"pill"},`${g.wells.length} בארות`))));
   if(issues.length) v.append(el("div",{class:"card"},...issues.map(([n,bad])=>
     el("div",{class:"note warn",style:"margin-bottom:8px"},el("b",{},`${n}: `),bad.join(" · ")))));
+  const cc=gasCoordsCard("inst"); if(cc) v.append(cc);
 
   v.append(instRO(()=>el("div",{class:"card"},
     el("h2",{},"הערות"),
@@ -1194,6 +1201,7 @@ function viewSamp(){
       el("button",{class:"btn",disabled:RO(),onclick:()=>addWell("samp")},"הוסף באר"),
       g.wells.length?el("button",{class:"btn ghost",disabled:RO(),onclick:()=>dropLastWell("samp")},"מחק אחרונה"):null,
       el("span",{class:"spacer"}),el("span",{class:"pill"},`${g.wells.length} בארות`)) : null));
+  const cc=gasCoordsCard("samp"); if(cc) v.append(cc);
 
   v.append(el("div",{class:"card"},
     el("h2",{},"בלאנקים"),
@@ -1439,6 +1447,130 @@ async function certPdf(){
   return pdfFromJpegs(out);
 }
 
+/* ============ נ"צ — מדידת מיקום ב-GPS (דני, 19.11.2026) ============
+   הנחיות סקר קרקע (21.04.2016) סעיף 3.1.5: סימון ב-GPS "ברמת דיוק של עד 2.5 מ'".
+   אין דרך לדעת מהדפדפן אם באייפד יש GPS — לכן מתג לכל מכשיר (localStorage), כבוי כברירת מחדל.
+   בלי המתג אין כפתור מדידה. מדידת GPS לא נרשמת בתיעוד השינויים; שינוי בהקלדה ידנית — כן */
+const K_GPS="vasa-gps", GPS_SECS=30, GPS_MAX=2.5;
+function gpsOn(){ try{ return localStorage.getItem(K_GPS)==="1"; }catch(e){ return false; } }
+function setGpsOn(on){ try{ on?localStorage.setItem(K_GPS,"1"):localStorage.removeItem(K_GPS); }catch(e){} render(); }
+
+/* WGS84 → ITM (EPSG:2039): העתקת הלמרט (towgs84 של EPSG:2039, הפוך) ואז טרנסוורס מרקטור על GRS80 — כמו templates/itm.py */
+function wgs2itm(lat,lon){
+  const rad=Math.PI/180;
+  const ecef=(la,lo,a,f)=>{ const e2=f*(2-f), sl=Math.sin(la*rad), N=a/Math.sqrt(1-e2*sl*sl);
+    return [N*Math.cos(la*rad)*Math.cos(lo*rad), N*Math.cos(la*rad)*Math.sin(lo*rad), N*(1-e2)*sl]; };
+  let [x,y,z]=ecef(lat,lon,6378137,1/298.257223563);
+  const r=Math.PI/(180*3600), tx=24.0024, ty=17.1032, tz=17.8444, rx=.33077*r, ry=1.85269*r, rz=-1.66969*r, s=1/(1+5.4248e-6);
+  [x,y,z]=[tx+s*(x-rz*y+ry*z), ty+s*(rz*x+y-rx*z), tz+s*(-ry*x+rx*y+z)];
+  const a=6378137, f=1/298.257222101, e2=f*(2-f), ep2=e2/(1-e2);
+  const lo=Math.atan2(y,x), p=Math.hypot(x,y);
+  let la=Math.atan2(z,p*(1-e2));
+  for(let i=0;i<10;i++){ const N=a/Math.sqrt(1-e2*Math.sin(la)**2), h=p/Math.cos(la)-N; la=Math.atan2(z,p*(1-e2*N/(N+h))); }
+  const la0=31.7343936111111*rad, lo0=35.2045169444444*rad, k0=1.0000067, FE=219529.584, FN=626907.39;
+  const M=ph=>a*((1-e2/4-3*e2**2/64-5*e2**3/256)*ph-(3*e2/8+3*e2**2/32+45*e2**3/1024)*Math.sin(2*ph)
+    +(15*e2**2/256+45*e2**3/1024)*Math.sin(4*ph)-(35*e2**3/3072)*Math.sin(6*ph));
+  const N=a/Math.sqrt(1-e2*Math.sin(la)**2), T=Math.tan(la)**2, C=ep2*Math.cos(la)**2, A=(lo-lo0)*Math.cos(la);
+  return [FE+k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120),
+          FN+k0*(M(la)-M(la0)+N*Math.tan(la)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*ep2)*A**6/720))];
+}
+
+/* חלון המדידה: עד GPS_SECS שניות, נשמרת הקריאה עם הדיוק הטוב ביותר. onSave({x,y,acc,t}) */
+function gpsDialog(title,onSave){
+  let best=null, last=null, err="", id=null;
+  const t0=Date.now();
+  const card=el("div",{class:"card"}), m=el("div",{class:"modal",role:"dialog","aria-modal":"true"},card);
+  const stop=()=>{ if(id!=null) navigator.geolocation.clearWatch(id); id=null; clearInterval(tick); };
+  const close=()=>{ stop(); m.remove(); };
+  const save=()=>{
+    if(!best) return;
+    stop(); m.remove();
+    const [x,y]=wgs2itm(best.lat,best.lon);
+    onSave({x:String(Math.round(x)), y:String(Math.round(y)), acc:best.acc.toFixed(1), t:nowHM()});
+  };
+  const draw=()=>{
+    const secs=Math.min(GPS_SECS,Math.round((Date.now()-t0)/1000)), live=id!=null;
+    card.textContent="";
+    /* append המקורי כותב null כטקסט — לכן דרך el, שמדלג על null */
+    card.append(...el("div",{},el("h2",{},`מדידת מיקום — ${title}`),
+      err ? el("div",{class:"note warn"},err)
+        : el("div",{class:"sub"},live?`מודד… ${secs} מתוך ${GPS_SECS} שניות. עומדים על הנקודה, האייפד פתוח לשמיים`:"המדידה הסתיימה"),
+      best ? el("div",{class:"grid",style:"margin-top:8px"},
+        fixedField("דיוק נוכחי",last?`±${last.acc.toFixed(1)} מ׳`:"—"),
+        fixedField("הדיוק הטוב ביותר",`±${best.acc.toFixed(1)} מ׳`)) : null,
+      best && best.acc>GPS_MAX ? el("div",{class:"note warn",style:"margin-top:10px"},
+        `הדיוק מעל ${GPS_MAX} מ׳ — הדרישה בהנחיות סקר קרקע (סעיף 3.1.5). אפשר להמתין, לשמור כך, או למדוד שוב במקום פתוח יותר`) : null,
+      el("div",{class:"bar"},
+        el("button",{class:"btn",type:"button",disabled:!best,onclick:save},live?"שמירה עכשיו":"שמירה"),
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn ghost",type:"button",onclick:close},"ביטול"))).childNodes);
+  };
+  const tick=setInterval(()=>{
+    if(id!=null && Date.now()-t0>=GPS_SECS*1000){ if(best) return save(); err="לא התקבל מיקום. בודקים שהמקלט מחובר או יוצאים למקום פתוח"; stop(); }
+    draw();
+  },1000);
+  if(!navigator.geolocation){ err="המכשיר לא מאפשר מדידת מיקום"; }
+  else id=navigator.geolocation.watchPosition(p=>{
+    last={lat:p.coords.latitude, lon:p.coords.longitude, acc:p.coords.accuracy};
+    if(!best || last.acc<best.acc) best=last;
+    draw();
+  },e=>{
+    err=e.code===1 ? "אין הרשאת מיקום. בהגדרות האייפד: פרטיות ואבטחה ← שירותי מיקום ← מאשרים לאפליקציה או ל-Safari"
+                   : "לא התקבל מיקום. בודקים שהמקלט מחובר או יוצאים למקום פתוח";
+    stop(); draw();
+  },{enableHighAccuracy:true, maximumAge:0, timeout:GPS_SECS*1000});
+  draw(); document.body.append(m);
+}
+
+/* כרטיס נ"צ: שורה לכל קידוח / באר. item: {label, c:{x,y,acc,t,src}, ro, manual(k,v), gps(c)} */
+function coordsCard(title, sub, items){
+  if(!gpsOn() && !items.some(it=>it.c.x||it.c.y)) return null;
+  const tb=el("tbody",{});
+  for(const it of items){
+    const c=it.c, has=!!(c.x||c.y), far=c.src==="GPS" && num(c.acc)>GPS_MAX;
+    const info=c.src==="GPS" ? `±${c.acc} מ׳ · GPS ${c.t||""}` : c.src==="ידני" ? "הוקלד" : "";
+    /* שדות ההקלדה נבנים מושבתים בשורה נעולה (RO() קורא את roInst) */
+    roInst=it.ro;
+    try{ tb.append(el("tr",{class:far?"hot":""},
+      el("td",{class:"mono"},it.label),
+      el("td",{class:"mono"},txt(c.x,v=>it.manual("x",v),{type:"number",ph:"X"})),
+      el("td",{class:"mono"},txt(c.y,v=>it.manual("y",v),{type:"number",ph:"Y"})),
+      el("td",{},info, far?el("div",{class:"hint"},`מעל ${GPS_MAX} מ׳`):null),
+      el("td",{},gpsOn() && !it.ro ? el("button",{class:"btn ghost sm",type:"button",
+        onclick:()=>gpsDialog(it.label,it.gps)},has?"מדידה חוזרת":"מדידת מיקום") : null))); }
+    finally{ roInst=false; }
+  }
+  return el("div",{class:"card"},
+    el("h2",{},title),
+    el("div",{class:"sub"},sub+` · רשת ישראל החדשה (ITM). נדרש דיוק של עד ${GPS_MAX} מ׳ (הנחיות סקר קרקע, סעיף 3.1.5). נכנס לאקסל בלבד — לא לטפסים`),
+    items.length ? el("div",{class:"scroll"},el("table",{class:"compact",style:"min-width:0"},
+      el("colgroup",{},[90,110,110,null,120].map(w=>el("col",{style:w?`width:${w}px`:null}))),
+      el("thead",{},el("tr",{},el("th",{},"נקודה"),el("th",{},"X"),el("th",{},"Y"),el("th",{},"דיוק"),el("th",{},""))),tb))
+      : el("div",{class:"empty"},"אין עדיין נקודות."));
+}
+/* קרקע: נ"צ אחד לכל קידוח שביומן */
+function soilCoordsCard(){
+  const borings=[...new Set(S.samples.map(s=>String(s.boring||"").trim()).filter(Boolean))];
+  return coordsCard("מיקום הקידוחים","נ״צ אחד לכל קידוח ביומן השדה", borings.map(b=>{
+    const c=S.coords[b]||{};
+    return {label:b, c, ro:RO(),
+      manual:(k,v)=>{ logChange(`נ״צ ${k.toUpperCase()} · קידוח ${b}`, c[k]||"", v, `coords.${b}.${k}`);
+        S.coords[b]={...c,[k]:v,acc:"",t:"",src:"ידני"}; save(); },
+      gps:p=>{ S.coords[b]={...p,src:"GPS"}; save(); }};
+  }));
+}
+/* גז: נ"צ לכל באר — אותו נ"צ בהתקנה ובדיגום. ברשומה מיובאת, נ"צ שנמדד בהתקנה נעול כמו שאר ההתקנה */
+function gasCoordsCard(part){
+  const g=S.gas;
+  return coordsCard("מיקום הבארות", part==="inst"?"נ״צ לכל באר":"נ״צ לכל באר — מה שנמדד בהתקנה מופיע כאן ולא צריך למדוד שוב",
+    g.wells.map((w,i)=>({label:w.name||`באר ${i+1}`,
+      c:{x:w.gx, y:w.gy, acc:w.gacc, t:w.gt, src:w.gsrc},
+      ro:S.locked || (!!g.imported && (part==="inst" || w.gday==="inst")),
+      manual:(k,v)=>{ logChange(`${part==="inst"?"התקנה":"דיגום"} — נ״צ ${k.toUpperCase()} · ${w.name||"באר"}`, w["g"+k], v, `gas.well.${part}.${w.id}.g${k}`);
+        w["g"+k]=v; w.gacc=""; w.gt=""; w.gsrc="ידני"; w.gday=part; save(); },
+      gps:p=>{ Object.assign(w,{gx:p.x, gy:p.y, gacc:p.acc, gt:p.t, gsrc:"GPS", gday:part}); save(); }})));
+}
+
 /* ============ sketch — draw, or photograph a paper sketch ============ */
 function sketchCard(){
   const card=el("div",{class:"card"},
@@ -1560,6 +1692,7 @@ function viewLog(){
     el("div",{class:"note warn"},el("b",{},`${hots.length} דגימות מעל ${PID_HOT} חל״מ. `),
       "שקול לשלוח ל-VOC ולדגום מטר מעל ומטר מתחת לתיחום הזיהום — סעיף 3.3. ",
       el("span",{class:"mono"},hots.map(s=>s.name||"—").join(" · ")))));
+  const cc=soilCoordsCard(); if(cc) v.append(cc);
 
   v.append(el("div",{class:"card"},
     el("h2",{},"סיום יום העבודה"),
@@ -2354,7 +2487,7 @@ async function renderInst(){
 /* שורות טופס 59: כל הבארות ואחריהן הבלאנקים. בפיצול — הבארות שסומנו לפיצול, עם קניסטר הפיצול */
 function gasCustodyRows(isSplit){
   const g=S.gas;
-  const well=w=>({name:w.name, depth:w.depth, vacFrom:w.vacFrom, vacTo:w.vacTo, flow:w.flow, purgeMin:w.purgeMin,
+  const well=w=>({well:w, name:w.name, depth:w.depth, vacFrom:w.vacFrom, vacTo:w.vacTo, flow:w.flow, purgeMin:w.purgeMin,
     pidAfter:w.pidAfter, ipa:w.ipa, sStart:w.sStart, sEnd:w.sEnd, to15:w.to15,
     ...(isSplit ? {can:w.spCan, vol:w.spVol, canFrom:w.spCanFrom, canTo:w.spCanTo, note:w.sNote}
                 : {can:w.can, vol:w.vol, canFrom:w.canFrom, canTo:w.canTo, note:[w.dup?"חזרה":"",w.sNote].filter(Boolean).join(" · ")})});
@@ -2584,6 +2717,9 @@ function tableSheet(name,head,rows,widths,wide,totals){
   return {name,widths,table:true,filterRows,rows:totals?[head,...rows,[],totals]:[head,...rows],
     styles:(r,c)=>r===0?XS.head:(r>filterRows?XS.total:(wide.has(c)?XS.cell:XS.mid))};
 }
+/* רשת ישראל החדשה (ITM, EPSG:2039) — "רשת הקורדינטות החדשה" בהנחיות סקר קרקע, סעיף 3.1.5 */
+const COORD_HEAD=["X — רשת ישראל החדשה (ITM)","Y — רשת ישראל החדשה (ITM)","דיוק נ״צ (מטר)","מקור נ״צ"], COORD_W=[14,14,10,9];
+const coordCells=c=>[xnum(c.x),xnum(c.y),xnum(c.acc),c.src||""];
 function workbookSheets(){
   const h=S.head, st=S.storage, yn=x=>x?"כן":"לא";
   const when=(d,t)=>[fmtFull(d),t].filter(Boolean).join(" ");
@@ -2629,11 +2765,15 @@ function workbookSheets(){
   const sheets=[{name:"פרטי יום הדיגום",widths:[28,70],rows:details,table:false,
     styles:(r,c)=>({sec:XS.label, tot:XS.total, an:XS.cell}[kinds[r]] ?? (c===0?XS.label:XS.cell))}];
 
+  /* נ"צ הקידוח — רק ביומן השדה (דני, 19.11.2026), ורק כשנרשם נ"צ כלשהו, כך שקובץ בלי מדידות לא משתנה */
+  const logRows=S.samples.filter(s=>s.boring||s.name||s.depth);
+  const cOf=s=>S.coords[String(s.boring||"").trim()]||{}, withC=logRows.some(s=>cOf(s).x||cOf(s).y);
   sheets.push(tableSheet("יומן שדה",
-    ["מס׳ קידוח","מס׳ דגימה","עומק (מטר)","שעה","סוג קרקע (חתך ליתולוגי)","צבע","ריח","לחות","ערך PID (ppm)","PID 20%","הערות"],
-    S.samples.filter(s=>s.boring||s.name||s.depth).map(s=>
-      [s.boring,s.name,xnum(s.depth),s.time,jv(s.soil),jv(s.color),s.odour,s.moist,xnum(s.pid),xnum(s.pid20),s.note]),
-    [10,14,10,8,22,14,7,8,12,10,30], new Set([4,10])));
+    ["מס׳ קידוח","מס׳ דגימה","עומק (מטר)","שעה","סוג קרקע (חתך ליתולוגי)","צבע","ריח","לחות","ערך PID (ppm)","PID 20%","הערות",
+     ...(withC?COORD_HEAD:[])],
+    logRows.map(s=>[s.boring,s.name,xnum(s.depth),s.time,jv(s.soil),jv(s.color),s.odour,s.moist,xnum(s.pid),xnum(s.pid20),s.note,
+      ...(withC?coordCells(cOf(s)):[])]),
+    [10,14,10,8,22,14,7,8,12,10,30,...(withC?COORD_W:[])], new Set([4,10])));
 
   /* שורת סה״כ: כמות אנליזות מכל סוג מתחת לעמודה שלה, והסך הכול בעמודת ההערות */
   const coc=(name,rows)=>{
@@ -2706,19 +2846,28 @@ function gasWorkbookSheets(){
 
   const sheets=[{name:"פרטי הסקר",widths:[28,70],rows,table:false,
     styles:(r,c)=>({sec:XS.label}[kinds[r]] ?? (c===0?XS.label:XS.cell))}];
+  /* נ"צ הבאר (דני, 19.11.2026): נמדד בהתקנה — בגיליון ההתקנה; נמדד ביום הדיגום — בגיליון שרשרת המשמורת */
+  const wc=w=>({x:w.gx, y:w.gy, acc:w.gacc, src:w.gsrc}), hasC=w=>!!(w.gx||w.gy);
+  const atSamp=w=>w.gday==="samp", noC=["","","",""];
+  const withC=g.wells.some(w=>hasC(w) && !atSamp(w)), withCs=g.wells.some(w=>hasC(w) && atSamp(w));
   if(full) sheets.push(tableSheet("התקנה",
     ["הבאר","שעת תחילת ההתקנה","שעת סיום ההתקנה","PID בבור (ppm)","מבחן חדירות (in/hg)",
-     "חול קוורץ + בדיקת עומק","בנטונייט גרגרים","אבקת בנטונייט רטוב","עומק הגשש (מטר)","תאור חתך הקרקע","הערות"],
+     "חול קוורץ + בדיקת עומק","בנטונייט גרגרים","אבקת בנטונייט רטוב","עומק הגשש (מטר)","תאור חתך הקרקע","הערות",
+     ...(withC?COORD_HEAD:[])],
     g.wells.map(w=>[w.name,w.tStart,w.tEnd,xnum(w.pidHole),xnum(w.perm),w.sand?"V":"",w.bentGran?"V":"",w.bentWet?"V":"",
-      xnum(w.depth),w.profile,w.note]),
-    [10,11,11,11,12,12,11,12,11,28,28], new Set([9,10])));
-  const coc=(name,isSplit)=>tableSheet(name,
+      xnum(w.depth),w.profile,w.note,...(withC?(atSamp(w)?noC:coordCells(wc(w))):[])]),
+    [10,11,11,11,12,12,11,12,11,28,28,...(withC?COORD_W:[])], new Set([9,10])));
+  const coc=(name,isSplit)=>{
+    const cs=!isSplit && withCs;
+    return tableSheet(name,
     ["מס׳ הגשש","מס׳ הקניסטר","נפח (ליטר)","עומק (מטר)","בדיקת ואקום מ- (in/hg)","בדיקת ואקום עד (in/hg)",
      "ספיקת המשאבה (ml/min)","משך השטיפה (דקות)","PID לאחר הדיגום (ppm)","בדיקת IPA","שעת התחלת הדיגום","שעת סיום הדיגום",
-     "לחץ הקניסטר מ- (in/hg)","לחץ הקניסטר עד (in/hg)","TO-15","הערות"],
+     "לחץ הקניסטר מ- (in/hg)","לחץ הקניסטר עד (in/hg)","TO-15","הערות",...(cs?COORD_HEAD:[])],
     gasCustodyRows(isSplit).map(r=>[r.name,r.can,xnum(r.vol),xnum(r.depth),xnum(r.vacFrom),xnum(r.vacTo),xnum(r.flow),
-      xnum(r.purgeMin),xnum(r.pidAfter),r.ipa?"V":"",r.sStart,r.sEnd,xnum(r.canFrom),xnum(r.canTo),r.to15?"V":"",r.note]),
-    [10,12,8,8,11,11,11,10,11,8,10,10,11,11,7,28], new Set([15]));
+      xnum(r.purgeMin),xnum(r.pidAfter),r.ipa?"V":"",r.sStart,r.sEnd,xnum(r.canFrom),xnum(r.canTo),r.to15?"V":"",r.note,
+      ...(cs?(r.well&&atSamp(r.well)&&hasC(r.well)?coordCells(wc(r.well)):noC):[])]),
+    [10,12,8,8,11,11,11,10,11,8,10,10,11,11,7,28,...(cs?COORD_W:[])], new Set([15]));
+  };
   sheets.push(coc("שרשרת משמורת",false));
   if(split) sheets.push(coc("משמורת פיצול",true));
   sheets.push(changesSheet());
@@ -2793,7 +2942,7 @@ async function instFileBlob(){
   const p={type:INST_FILE, v:1, exportedAt:stamp(), from:S.id, by:g.inst.s1||"",
     head:Object.fromEntries(Object.keys(INST_HEAD_LABEL).map(k=>[k,S.head[k]])),
     inst:structuredClone(g.inst),
-    wells:g.wells.map(w=>({id:w.id, ...Object.fromEntries(INST_WELL.map(k=>[k,w[k]]))})),
+    wells:g.wells.map(w=>({id:w.id, ...Object.fromEntries(INST_WELL.concat(COORD_KEYS).map(k=>[k,w[k]]))})),
     sig:S.sigs.gi||"", changes:structuredClone(S.changes)};
   const code=await digest(JSON.stringify(p));
   return new Blob([JSON.stringify({...p, code})],{type:"application/json"});
@@ -2880,6 +3029,8 @@ function updateFromInstall(o, fname){
     const w=byId.get(src.id);
     if(!w){ log.push({label:pre+"באר נוספה", from:"", to:src.name||"באר"}); return {...blankWell(), ...src, auto:[]}; }
     for(const k of INST_WELL){ diff(`${WELL_LABEL[k]} · ${src.name||w.name||"באר"}`,w[k],src[k]); w[k]=src[k]; }
+    /* נ"צ מההתקנה — רק כשנמדד שם. מדידה שנעשתה כאן ביום הדיגום לא נמחקת */
+    if(src.gx||src.gy) for(const k of COORD_KEYS) w[k]=src[k]??"";
     byId.delete(src.id); return w;
   });
   for(const w of byId.values()) log.push({label:pre+"באר הוסרה", from:w.name||"באר", to:""});
@@ -3082,7 +3233,13 @@ function viewDocs(){
       el("button",{class:"btn ghost",type:"button",onclick:importInstall},"ייבוא התקנה"),
       el("span",{class:"spacer"}),
       el("span",{class:"pill"},`${docs.length} רשומות`)),
-    list));
+    list),
+    /* הגדרה של המכשיר, לא של הרשומה — לכן לא תלויה בנעילת הרשומה הפתוחה */
+    el("div",{class:"card"},
+      el("h2",{},"המכשיר הזה"),
+      el("div",{class:"sub"},"מדלקים רק באייפד עם כרטיס SIM (יש בו GPS) או עם מקלט GPS חיצוני מחובר. כשכבוי — אין כפתור מדידת מיקום"),
+      el("div",{class:"chips"},el("button",{class:"chip",type:"button","aria-pressed":String(gpsOn()),
+        onclick:()=>setGpsOn(!gpsOn())},"מדידת מיקום ב-GPS"))));
 }
 
 /* ============ shell ============ */
