@@ -2,6 +2,16 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 19.11.2026 — Coordinates (GPS)
+
+- **Requirement:** MoEP soil-survey guidelines (21.04.2016, v1) section 3.1.5: GPS marking "up to 2.5 m" accuracy. The soil-gas guidelines (v2, 2021) only ask for coordinates in the results table.
+- **Per-device switch, off by default** (Danny): a browser cannot tell a cellular iPad (GPS) from a Wi-Fi-only one (network location). The switch lives in localStorage (`vasa-gps`), not in the record. Off = no measure button at all; the coordinates card still shows when a record already has coordinates.
+- **Measurement:** `watchPosition` with high accuracy for up to 30 s; the reading with the best reported accuracy is kept. Converted to ITM (EPSG:2039) in the app — the same Helmert + TM as `templates/itm.py`, checked to the millimetre. Stored as whole metres, plus accuracy, time and source (GPS / manual). Warning above 2.5 m.
+- **Where:** soil — one point per borehole (`coords`, keyed by borehole number). Gas — per well (`gx/gy/gacc/gt/gsrc/gday`), on both the installation and sampling days (Danny); measured at installation → shown on sampling, no re-measure. Coordinates travel in the installation data file; in an imported record those measured at installation are locked; a point measured on sampling day is not overwritten by a later installation file without coordinates.
+- **Output** (Danny): Excel only. Soil — the field-log sheet. Gas — by the day the point was measured (`gday`): installation → the installation sheet; sampling day (including sampling-only records) → the main custody sheet (not the split sheet). Columns are headed "רשת ישראל החדשה (ITM)" and are added to a sheet only when it has coordinates, so existing files are unchanged. Never on the forms (no field for it; forms are fixed).
+- **Change log** (Danny): GPS measurements are not logged at all; a manual edit of an existing value is.
+- Pilot: one Bad Elf Flex Mini Standard ordered 19.11.2026 to test against known points.
+
 ## 18.11.2026 — Soil gas after the first field use
 
 Reviewed the first two real surveys (Kfar Hess, Tal Shahar). Danny approved only these changes:
