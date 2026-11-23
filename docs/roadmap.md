@@ -24,11 +24,11 @@ The change log must survive a merge.
 
 ## Storage capacity
 
-`localStorage` is about 5 MB per origin on iOS. Signatures (PNG), the drawn sketch (PNG) and the sketch photo (JPEG, ≤1000 px) take most of the space. A heavy user could fill it after some dozens of days, and then the red "האחסון במכשיר מלא" pill appears.
+Certificate pages moved to IndexedDB on 23.11.2026 after a device filled up; the rest is still in `localStorage`, and records can be deleted after 45 days (23.11.2026). `localStorage` is about 5 MB per origin on iOS. Signatures (PNG), the drawn sketch (PNG) and the sketch photo (JPEG, ≤1000 px) take most of the space. A heavy user could fill it after some dozens of days, and then the red "האחסון במכשיר מלא" pill appears.
 
 **Direction:**
 - Move records to **IndexedDB**, which has a much larger quota and is async, with a one-time migration from `localStorage`.
-- Add a way to **archive / delete old records** once their PDFs have been sent. It has to respect the quality-record rules: probably export first, then delete.
+- Deleting old records: built 23.11.2026 (see [decisions](decisions.md)). Records are not exported first; only their change log is kept on the device.
 
 ## Backup import
 

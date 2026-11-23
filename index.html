@@ -162,6 +162,8 @@ tr.fresh td{border-top:3px solid var(--accent); border-bottom:3px solid var(--ac
   width:100%; display:grid; grid-template-columns:1fr auto; gap:3px 12px; align-items:center; text-align:right;
   background:var(--surface); border:1.5px solid var(--line); border-radius:8px; padding:11px 13px; cursor:pointer; min-height:56px;
 }
+.delrow{display:flex; gap:8px; align-items:center}
+.delrow .docrow{flex:1; min-width:0}
 .docrow:hover{border-color:var(--accent)}
 /* גז קרקע — כרטיס לכל באר / בלאנק במסך הדיגום */
 .well{border:1.5px solid var(--line-2); border-radius:8px; padding:12px; margin:0 0 12px; background:var(--sunk)}
@@ -286,6 +288,8 @@ const GAS_METHODS = ["דחיקה ישירה – גיאופרוב","מקדח יד
 const BORE_DIA    = ['1"','1.25"','1.5"','1.75"','2"','3"','4"','6"'];
 const LAMPS       = ["10.6 eV","11.7 eV"];
 const PURGE_VOLS  = ["3","5"];
+/* 1.4 ליטר — יש מעבדות שמספקות כך (דני, 23.11.2026) */
+const CAN_VOLS    = ["1","1.4","6"];
 const GAS_MODE    = {full:"התקנה ודיגום", manual:"דיגום בלבד"};
 
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -332,7 +336,7 @@ function blankGas(mode){
 function blankWell(name){
   return {id:crypto.randomUUID(), name:name||"",
     tStart:"", tEnd:"", pidHole:"", perm:"", sand:false, bentGran:false, bentWet:false, depth:"", profile:"", note:"",
-    can:"", vol:"", vacFrom:"", vacTo:"", flow:"", purgeMin:"", pidAfter:"", ipa:false, sStart:"", sEnd:"",
+    can:"", vol:"", vacFrom:"", vacTo:"", flow:"", purgeMin:"", purgeVols:"", pidAfter:"", ipa:false, sStart:"", sEnd:"",
     canFrom:"", canTo:"", to15:true, sNote:"", dup:false, split:false, spCan:"", spVol:"", spCanFrom:"", spCanTo:"",
     /* נ"צ (ITM), דיוק במטרים, שעה, מקור (GPS / ידני), ובאיזה יום נמדד (inst / samp) — ראה COORD_KEYS */
     gx:"", gy:"", gacc:"", gt:"", gsrc:"", gday:"",
@@ -372,7 +376,7 @@ function blankDay(id){
     sigs:{s1:"", s2:"", by:"", lab:"", bySplit:"", labSplit:"", gi:"", gs:""},
     sketch:"", sketchPhoto:"", changes:[],
     /* גז קרקע: עמודי תעודת הניקיון של הקניסטרים, מצולמים (JPEG data URL). נשמרים מחוץ למסמך היום, כמו צילום השרטוט */
-    canCert:[],
+    canCert:[], certN:0,
     /* קרקע: נ"צ לכל קידוח — {מס' קידוח: {x, y, acc, t, src}}. נכנס לאקסל (יומן שדה) בלבד, לא לטפסים */
     coords:{},
     gas:blankGas()
@@ -407,6 +411,7 @@ function normalize(d){
   /* רשומות מלפני גז הקרקע הן רשומות קרקע */
   n.kind = d.kind==="gas" ? "gas" : "soil";
   n.canCert = Array.isArray(d.canCert) ? d.canCert : [];
+  n.certN = n.canCert.length || Number(d.certN) || 0;
   n.coords = d.coords && typeof d.coords==="object" && !Array.isArray(d.coords) ? d.coords : {};
   const g=d.gas||{};
   n.gas={...b.gas, ...g, mode:g.mode==="manual"?"manual":"full",
@@ -591,14 +596,218 @@ function allDocs(){
 }
 
 /* ============ persistence ============ */
+/* עמודי תעודת הניקיון ב-IndexedDB: עמוד מצולם הוא כחצי מיליון תווים, וכל localStorage באייפד כ-5MB —
+   כמה תעודות ממלאות אותו והשינויים לא נשמרים (23.11.2026). בלי IndexedDB העמודים נשארים ברשומה, כמו קודם.
+   certMoved — רשומות שהעמודים שלהן כבר שם; certN — כמה עמודים יש, כדי לדעת לטעון */
+const certMoved=new Set();
+let certDb=null, certFail="", certJob=Promise.resolve();
+const certDo=f=>certJob=certJob.then(f,f);
+function certOpen(){
+  if(!certDb) certDb=new Promise((res,rej)=>{
+    const q=indexedDB.open("vasa-files",2);
+    q.onupgradeneeded=()=>{ for(const n of ["cert","gone"]) if(!q.result.objectStoreNames.contains(n)) q.result.createObjectStore(n); };
+    q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); q.onblocked=()=>rej(new Error("blocked"));
+  }).catch(e=>{ certDb=null; throw e; });
+  return certDb;
+}
+async function certTx(mode,f,store="cert"){
+  const d=await certOpen();
+  return new Promise((res,rej)=>{
+    const t=d.transaction(store,mode), q=f(t.objectStore(store));
+    t.oncomplete=()=>res(q.result); t.onerror=t.onabort=()=>rej(t.error||new Error("aborted"));
+  });
+}
+const certGet=async id=>(await certTx("readonly",s=>s.get(id)))||[];
+/* כתיבה, ואז קריאה חזרה — רק אחרי שהעמודים נקראו שלמים מותר להוציא אותם מהרשומה */
+async function certPut(id,pages){
+  await certTx("readwrite",s=>s.put(pages,id));
+  if(JSON.stringify(await certGet(id))!==JSON.stringify(pages)) throw new Error("הבדיקה אחרי השמירה נכשלה");
+  certMoved.add(id);
+}
+/* שינוי בעמודים של הרשומה id. נקרא רק מתוך certDo */
+async function certSet(id,pages){
+  try{ await certPut(id,pages); }catch(e){ certMoved.delete(id); }
+  if(S.id===id){ S.canCert=pages; S.certN=pages.length; save(); }
+}
+/* בפתיחת רשומה: עמודים שעוד בתוכה (גרסה קודמת) עוברים ל-IndexedDB; אחרת נטענים משם */
+const loadCert=()=>certDo(async()=>{
+  const id=S.id;
+  if(!isGas()) return;
+  if(S.canCert.length && !certMoved.has(id)){
+    const n=S.canCert.length;
+    try{ await certPut(id,S.canCert); }catch(e){ return; }
+    if(S.id===id){ S.certN=n; persistLocal(); render(); }
+  }else if(S.certN && !S.canCert.length){
+    try{
+      const pages=await certGet(id);
+      if(S.id!==id) return;
+      if(!pages.length) throw new Error("empty");
+      certMoved.add(id); S.canCert=pages; S.certN=pages.length; certFail="";
+    }catch(e){ if(S.id!==id) return; certFail=id; }
+    render();
+  }
+});
+/* פעם אחת בפתיחת האפליקציה: מפנה את האחסון מהרשומות האחרות */
+const moveOldCerts=()=>certDo(async()=>{
+  for(const {id} of [...localIdx]){
+    const d=id===S.id ? null : readJSON(kDoc(id));
+    if(!d || !Array.isArray(d.canCert) || !d.canCert.length) continue;
+    try{ await certPut(id,d.canCert); }catch(e){ return; }
+    const now=id===S.id ? null : readJSON(kDoc(id));
+    if(now) try{ localStorage.setItem(kDoc(id),JSON.stringify({...now,canCert:[],certN:d.canCert.length})); }catch(e){}
+  }
+  if(storageFull && !pristine(S)){ persistLocal(); render(); }
+});
+
+/* ---------- נפח האחסון ומחיקת רשומות (דני, 23.11.2026) ----------
+   המסמכים נשמרים בתיק הלקוח בענן. רשומה נמחקת מהאייפד רק חודש וחצי אחרי העבודה, אחת אחת,
+   או באישור הדוגם כשהאחסון מגיע ל-80% — מהישנה לחדשה, עד כ-50%.
+   תיעוד השינויים של רשומה שנמחקה נשאר במכשיר (IndexedDB, "gone"): בקרקע הוא לא נמצא ב-PDF */
+const DEL_DAYS=45, STORE_WARN=.8, STORE_TARGET=.5, K_CAP="vasa-cap", K_ASKED="vasa-store-asked", STORE_5MB=5*1024*1024;
+/* גודל כפי שהדפדפן סופר: בית לתו, ושניים כשיש תו שאינו לטיני */
+const strBytes=x=>x.length*(/[^\x00-\xff]/.test(x)?2:1);
+const keyBytes=k=>strBytes(k)+strBytes(localStorage.getItem(k)||"");
+function storeUsed(){
+  let n=0;
+  try{ for(let i=0;i<localStorage.length;i++) n+=keyBytes(localStorage.key(i)); }catch(e){}
+  return n;
+}
+/* הנפח המרבי אינו ידוע מראש: מניחים 5MB. נכשלה שמירה לפני כן — זה הנפח; נכנס יותר — הנפח כפול */
+function storeCap(used){
+  let cap=STORE_5MB;
+  try{ cap=Number(localStorage.getItem(K_CAP))||cap; }catch(e){}
+  return used>cap ? Math.max(2*STORE_5MB,used) : cap;
+}
+/* אחרי שמירה שנכשלה — המכשיר מלא, גם אם ההערכה של הנפח גדולה יותר */
+function storeState(){ const used=storeUsed(), c=storeCap(used), cap=storageFull?Math.min(c,used):c; return {used, cap, pct:used/cap}; }
+/* ימים מהעבודה או מהעריכה האחרונה, המאוחר מביניהם — תאריך שהוזן בטעות לא הופך רשומה טרייה לישנה */
+function ageDays(e){
+  const last=Math.max(Date.parse(e.date||"")||0, Date.parse(e.updated||"")||0);
+  return last ? Math.floor((Date.now()-last)/864e5) : 0;
+}
+const canDelete=e=>e.id!==S.id && localIdx.some(x=>x.id===e.id) && ageDays(e)>=DEL_DAYS;
+const goneAll=()=>certTx("readonly",s=>s.getAll(),"gone");
+/* מוחק רשומה אחת. תיעוד השינויים נשמר ונקרא חזרה לפני המחיקה; אם נכשל — לא מוחקים */
+const deleteDoc=id=>certDo(async()=>{
+  const d=readJSON(kDoc(id));
+  if(!d || id===S.id) return false;
+  const m=meta(normalize(d));
+  if(!canDelete(m)) return false;
+  const g={id, kind:m.kind, title:m.title, date:m.date, client:m.client, updated:m.updated, locked:m.locked, n:m.n,
+    deletedAt:stamp(), changes:d.changes||[]};
+  try{
+    await certTx("readwrite",s=>s.put(g,id),"gone");
+    if(JSON.stringify(await certTx("readonly",s=>s.get(id),"gone"))!==JSON.stringify(g)) throw new Error("verify");
+  }catch(e){ alert("הרשומה לא נמחקה: לא ניתן היה לשמור את תיעוד השינויים שלה."); return false; }
+  if(id===S.id) return false;
+  try{
+    localStorage.removeItem(kDoc(id));
+    localIdx=localIdx.filter(e=>e.id!==id);
+    localStorage.setItem(K_INDEX, JSON.stringify(localIdx));
+  }catch(e){}
+  certMoved.delete(id);
+  try{ await certTx("readwrite",s=>s.delete(id)); }catch(e){}
+  return true;
+});
+function askDelete(e){
+  askYes("למחוק את הרשומה מהאייפד?", `${e.title}${e.client?` · ${e.client}`:""}. לפני המחיקה ודא שהמסמכים שלה נמצאים בתיק הלקוח בענן. `+
+    (e.locked?"":"הרשומה לא נעולה. ")+"המחיקה אינה ניתנת לביטול. תיעוד השינויים נשמר.",
+    "כן, למחוק", async()=>{
+      if(await deleteDoc(e.id)){
+        if(storageFull && !pristine(S)) persistLocal();
+        flash=`הרשומה ״${e.title}״ נמחקה מהאייפד.`;
+        await loadGone();
+      }
+      render();
+    }, true);
+}
+/* כמה רשומות ישנות, מהישנה לחדשה, צריך למחוק כדי לרדת ליעד */
+function cleanupPlan(st){
+  const plan=[];
+  let left=st.used;
+  const old=localIdx.filter(canDelete).sort((a,b)=>ageDays(b)-ageDays(a));
+  for(const e of old){
+    if(left<=st.cap*STORE_TARGET) break;
+    const size=keyBytes(kDoc(e.id));
+    plan.push({e,size}); left-=size;
+  }
+  return plan;
+}
+const pctText=x=>`${Math.round(x*100)}%`;
+/* מופיעה בפתיחה, בחזרה לאפליקציה, במעבר רשומה, וכשהאחסון התמלא. "לא עכשיו" — לא שואלת שוב עד מחר */
+function checkStorage(){
+  if(document.querySelector(".modal")) return;
+  const st=storeState();
+  if(st.pct<STORE_WARN && !storageFull) return;
+  const tag=todayISO()+(storageFull?"!":"");
+  try{ if(localStorage.getItem(K_ASKED)===tag) return; }catch(e){}
+  const plan=cleanupPlan(st), pick=new Set(plan.map(p=>p.e.id));
+  const later=()=>{ try{ localStorage.setItem(K_ASKED,tag); }catch(e){} m.remove(); };
+  const card=el("div",{class:"card"}), m=el("div",{class:"modal",role:"dialog","aria-modal":"true"},card);
+  let busy=false;
+  const run=async()=>{
+    busy=true; paint();
+    let done=0;
+    for(const p of plan) if(pick.has(p.e.id)){ if(!await deleteDoc(p.e.id)) break; done++; }
+    if(!pristine(S)) persistLocal();
+    await loadGone();
+    m.remove();
+    flash=`נמחקו ${done} רשומות מהאייפד. האחסון עכשיו ${pctText(storeState().pct)}.`;
+    render();
+  };
+  const paint=()=>{
+    const freed=plan.filter(p=>pick.has(p.e.id)).reduce((a,p)=>a+p.size,0);
+    card.textContent="";
+    card.append(...el("div",{},
+      el("h2",{},storageFull?"האחסון במכשיר מלא":`האחסון במכשיר הגיע ל-${pctText(st.pct)}`),
+      el("div",{class:"sub"},plan.length
+        ? `למחוק מהאייפד רשומות ישנות (מעל חודש וחצי)? ודא שהמסמכים שלהן בתיק הלקוח בענן. לחיצה על רשומה משאירה אותה. אחרי המחיקה: כ-${pctText((st.used-freed)/st.cap)}. תיעוד השינויים נשמר`
+        : "אין במכשיר רשומות ישנות מחודש וחצי, ולכן אין מה למחוק. שולחים את הקבצים של הרשומה הפתוחה במייל ופונים לדני."),
+      storageFull?el("div",{class:"note warn",style:"margin-bottom:12px"},"השינוי האחרון לא נשמר. לא סוגרים את האפליקציה."):null,
+      plan.length?el("div",{class:"picks"},plan.map(p=>el("button",{class:"chip",type:"button",disabled:busy,
+          "aria-pressed":String(pick.has(p.e.id)),
+          onclick:()=>{ pick.has(p.e.id)?pick.delete(p.e.id):pick.add(p.e.id); paint(); }},
+        el("span",{class:"ck","aria-hidden":"true"},pick.has(p.e.id)?"✓":""),
+        `${p.e.title}${p.e.locked?"":" · לא נעולה"}`))):null,
+      el("div",{class:"bar"},
+        plan.length?el("button",{class:"btn warnb",type:"button",disabled:busy||!pick.size,onclick:run},
+          busy?"מוחק…":pick.size===1?"מחיקת רשומה אחת":`מחיקת ${pick.size} רשומות`):null,
+        el("span",{class:"spacer"}),
+        el("button",{class:"btn ghost",type:"button",disabled:busy,onclick:later},plan.length?"לא עכשיו":"הבנתי"))).childNodes);
+  };
+  paint(); document.body.append(m);
+}
+/* תיעוד השינויים של הרשומות שנמחקו — קובץ אחד */
+async function exportGone(){
+  let all=[]; try{ all=await goneAll(); }catch(e){}
+  const rows=[["רשומה","תאריך","לקוח","נמחקה מהאייפד","זמן השינוי","מבצע","שדה","מ-","ל-"]];
+  for(const g of all) for(const c of g.changes.length?g.changes:[{}])
+    rows.push([g.title,fmtFull(g.date),g.client,new Date(g.deletedAt).toLocaleString("he-IL"),
+      c.t?new Date(c.t).toLocaleString("he-IL"):"",c.who,c.label||"אין שינויים",c.from,c.to]);
+  const csv="\ufeff"+rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  offerFile(new Blob([csv],{type:"text/csv"}), `תיעוד שינויים — רשומות שנמחקו ${ddmmyy(todayISO())}.csv`);
+}
+let goneN=0;
+const loadGone=()=>certDo(async()=>{ try{ goneN=(await goneAll()).length; }catch(e){} });
 function persistLocal(){
   try{
-    localStorage.setItem(kDoc(S.id), JSON.stringify(S));
+    localStorage.setItem(kDoc(S.id), JSON.stringify(certMoved.has(S.id) ? {...S, canCert:[]} : S));
     localIdx = localIdx.filter(e=>e.id!==S.id).concat([meta(S)]);
     localStorage.setItem(K_INDEX, JSON.stringify(localIdx));
     localStorage.setItem(K_CUR, S.id);
     storageFull=false;
-  }catch(e){ storageFull=true; }
+    try{ const c=localStorage.getItem(K_CAP); if(c && storeUsed()>Number(c)) localStorage.removeItem(K_CAP); }catch(e){}
+  }catch(e){
+    if(!storageFull){
+      storageFull=true;
+      /* הנפח שבו השמירה נכשלה — מכאן האחוזים נכונים למכשיר הזה */
+      try{
+        const need=storeUsed()-keyBytes(kDoc(S.id))+strBytes(JSON.stringify(certMoved.has(S.id)?{...S,canCert:[]}:S));
+        if(need<storeCap(0)) localStorage.setItem(K_CAP,String(need));
+      }catch(x){}
+      setTimeout(checkStorage,0);
+    }
+  }
 }
 /* רשומה ריקה שנשמרה רק כדי לזכור את סוגה (גז קרקע) — יוצאת מהמכשיר כשעוברים ממנה בלי שנגעו בה */
 function dropLocal(id){
@@ -634,7 +843,7 @@ async function pushRemote(){
     setPill("synced");
   }catch(e){ setPill("local"); return; }
   /* בנפרד ואחרון: מסמך גדול (עד CERT_MAX עמודים) לא יעצור את שמירת היום עצמו */
-  if(isGas()) try{ await r.cert.set({pages:canCert||[]}); }catch(e){}
+  if(isGas() && canCert.length===S.certN) try{ await r.cert.set({pages:canCert}); }catch(e){}
 }
 
 async function attachRemote(){
@@ -650,7 +859,7 @@ async function attachRemote(){
     if(g.exists){ const {sketch,...sg}=structuredClone(g.data()); next.sigs={...next.sigs,...sg}; next.sketch=sketch||""; }
     if(l.exists) next.changes=structuredClone(l.data().items||[]);
     if(p.exists) next.sketchPhoto=p.data().photo||"";
-    if(c.exists) next.canCert=[...(c.data().pages||[])];
+    if(c.exists && (c.data().pages||[]).length) next.canCert=[...c.data().pages];
     S=normalize(next);
     suppress=false;
     if(d.exists) persistLocal();
@@ -665,15 +874,27 @@ async function attachRemote(){
 }
 
 async function switchTo(next){
+  commitField();
   flushChanges();
   clearTimeout(saveT);
-  if(!pristine(S)){ persistLocal(); await pushRemote(); }
+  if(!pristine(S)){
+    persistLocal();
+    /* בלי מקום ובלי מאגר משותף, מעבר לרשומה אחרת מוחק את מה שלא נשמר — נשארים בה */
+    if(storageFull && !db){
+      render();
+      alert("האחסון במכשיר מלא והרשומה הפתוחה לא נשמרה, לכן לא עוברים ממנה. שולחים את הקבצים שלה במייל (מסירה וקבצים) ופונים לדני. לא סוגרים את האפליקציה.");
+      return false;
+    }
+    await pushRemote();
+  }
   else dropLocal(S.id);
   if(unsubDay){ unsubDay(); unsubDay=null; }
   S=next;
   try{ localStorage.setItem(K_CUR, S.id); }catch(e){}
   active="day"; render(); window.scrollTo(0,0);
+  loadCert(); certDo(checkStorage);
   await attachRemote();
+  return true;
 }
 async function openDoc(id){
   if(id===S.id){ active="day"; flash=null; render(); window.scrollTo(0,0); return; }
@@ -692,7 +913,7 @@ async function newDoc(kind, mode){
   /* רשומה שעוד לא נגעו בה מוחלפת ברשומה מהסוג שנבחר */
   const prevTitle=pristine(S) ? "" : docTitle(S);
   flash=null;
-  await switchTo(fresh);
+  if(!await switchTo(fresh)) return;
   /* רשומת גז נשמרת מיד, כדי שפתיחה מחדש של האפליקציה תחזור לרשומת גז ולא לרשומת קרקע ריקה */
   if(isGas()) persistLocal();
   if(prevTitle){ flash=`הרשומה ״${prevTitle}״ נשמרה. אפשר לחזור אליה מלשונית רשומות.`; render(); }
@@ -803,7 +1024,11 @@ function instRO(build){
   try{ return build(); } finally{ roInst=false; }
 }
 const field=(label,node,hint)=>el("div",{class:"f"},el("label",{},label),node,hint?el("span",{class:"hint"},hint):null);
+/* שינוי שמגיע משדה: הבנייה מחדש נדחית עד שהמעבר לשדה הבא הסתיים (renderSoon), כדי שהשדה שנגעו בו לא יוחלף */
+let typing=0;
+const fromField=on=>v=>{ typing++; try{ on(v); } finally{ typing--; } };
 function txt(val,on,opts={}){
+  on=fromField(on);
   const i=el("input",{type:opts.type||"text", value:val||"", placeholder:opts.ph||"",
     step:opts.type==="number"?"any":null, disabled:RO()});
   if(opts.type==="time"||opts.type==="date"){
@@ -819,12 +1044,14 @@ function txt(val,on,opts={}){
   return i;
 }
 function area(val,on){
+  on=fromField(on);
   const a=el("textarea",{disabled:RO()});
   a.value=val||"";
   a.addEventListener("change",()=>on(a.value));
   return a;
 }
 function sel(val,list,on,blank="—"){
+  on=fromField(on);
   const s=el("select",{disabled:RO()});
   s.append(el("option",{value:""},blank));
   /* "11.7 eV" — מספר ואחריו יחידה באנגלית. בלי סימן כיוון (LRM) המסך מימין לשמאל מציג "eV 11.7" */
@@ -1016,7 +1243,7 @@ const INST_WELL=Object.keys(WELL_LABEL);
 const COORD_KEYS=["gx","gy","gacc","gt","gsrc","gday"];
 /* שדות הדיגום בבאר (טופס 59) — אינם נכנסים לקובץ נתוני ההתקנה */
 const SAMP_LABEL={can:"מס׳ הקניסטר", vol:"נפח הקניסטר", vacFrom:"מבחן אטימות — מ-", vacTo:"מבחן אטימות — עד",
-  flow:"ספיקת המשאבה", purgeMin:"משך השטיפה", pidAfter:"PID לאחר הדיגום", ipa:"בדיקת IPA", sStart:"שעת התחלת הדיגום",
+  flow:"ספיקת המשאבה", purgeMin:"משך השטיפה", purgeVols:"מס׳ נפחי שטיפה", pidAfter:"PID לאחר הדיגום", ipa:"בדיקת IPA", sStart:"שעת התחלת הדיגום",
   sEnd:"שעת סיום הדיגום", canFrom:"לחץ הקניסטר — מ-", canTo:"לחץ הקניסטר — עד", to15:"TO-15", sNote:"הערות",
   dup:"חזרה", split:"פיצול", spCan:"פיצול — מס׳ קניסטר", spVol:"פיצול — נפח", spCanFrom:"פיצול — לחץ מ-", spCanTo:"פיצול — לחץ עד"};
 
@@ -1094,7 +1321,7 @@ function viewInst(){
     const bad=wellInstIssues(w);
     if(bad.length) issues.push([w.name||`שורה ${i+1}`,bad]);
     const t=(k,opts)=>txt(w[k],x=>setWell(w,k,x),opts);
-    tb.append(el("tr",{class:bad.length?"hot":""},
+    tb.append(el("tr",{class:bad.length?"hot":"","data-id":w.id},
       el("td",{class:"rownum"},String(i+1)),
       el("td",{class:"mono"},t("name",{ph:"SG-1"})),
       el("td",{class:"mono"},t("tStart",{type:"time"})),
@@ -1174,7 +1401,7 @@ function viewSamp(){
         ? field("סוג וקוטר הצנרת", txt(o.tube,gsub("samp","tube",pre+"סוג וקוטר הצנרת"),{ph:"טפלון 1/4 אינץ׳"}))
         : fixedField("סוג וקוטר הצנרת", tube, "מיום ההתקנה"),
       field("מס׳ נפחי שטיפה", sel(o.purgeVols,PURGE_VOLS,gsub("samp","purgeVols",pre+"מס׳ נפחי שטיפה")),
-        purgeVolsNeeded() ? `לפי עומקי הבארות: ${purgeVolsNeeded()} — סעיף 9.8.4.2` : "3 עד עומק 1.5 מ׳, 5 בבאר עמוקה יותר — סעיף 9.8.4.2"),
+        "לכל הבארות. באר שונה — בוחרים בשורה שלה. 3 עד עומק 1.5 מ׳, 5 בבאר עמוקה יותר — סעיף 9.8.4.2"),
       field("ספק הקניסטר", sel(o.canSupplier,LABS.concat([OTHER]),gsub("samp","canSupplier",pre+"ספק הקניסטר"))),
       o.canSupplier===OTHER ? field("ספק הקניסטר — שם", txt(o.canSupplierOther,gsub("samp","canSupplierOther",pre+"ספק הקניסטר — שם"),{ph:"שם הספק"})) : null,
       field("תאריך אספקה", txt(o.canDate,gsub("samp","canDate",pre+"תאריך אספקת הקניסטרים"),{type:"date"})),
@@ -1185,16 +1412,13 @@ function viewSamp(){
     el("div",{class:"grid wide",style:"margin-top:16px"},
       pad("gs",`חתימת הדוגם — ${o.s1||"לא נבחר"}`,S.sigs))));
   v.append(certCard());
-  const pv=purgeVolsNeeded();
-  if(pv && o.purgeVols && o.purgeVols!==pv) v.append(el("div",{class:"card"},el("div",{class:"note warn"},
-    el("b",{},"מס׳ נפחי השטיפה: "),`נבחר ${o.purgeVols}, ולפי עומקי הבארות נדרש ${pv} — הוראת עבודה 9.8.4.2.`)));
 
   /* כרטיס לכל באר — הטבלה של טופס 59 רחבה מדי למסך */
   v.append(el("div",{class:"card"},
     el("h2",{},"דיגום הבארות"),
     el("div",{class:"sub"},manual
       ? "דיגום בלבד: מס׳ הגשש והעומק מוקלדים כאן. בלי בדיקת זמן ההמתנה ובלי בדיקת זמן השטיפה — באחריות הדוגם"
-      : "הבארות מיום ההתקנה. לפי נספח B: מבחן אטימות (בין 7.5 ל-15 אינץ׳ כספית, דקה, ירידה עד 0.5), שטיפה בספיקה 150, IPA, ואז פתיחת הקניסטר (בין 26 ל-30 בהתחלה, בין 3 ל-5 בסוף)"),
+      : "הבארות מיום ההתקנה. לפי נספח B: מבחן אטימות (בין 7.5 ל-15 אינץ׳ כספית, דקה, ירידה עד 0.5), שטיפה בספיקה של 100 עד 200, IPA, ואז פתיחת הקניסטר (בין 26 ל-30 בהתחלה, בין 3 ל-5 בסוף)"),
     g.wells.length ? null : el("div",{class:"empty"},manual?"עוד לא נוספו בארות.":"אין בארות. הבארות נוספות בלשונית ההתקנה."),
     ...g.wells.map((w,i)=>wellSampCard(w,i,manual)),
     manual ? el("div",{class:"bar"},
@@ -1223,28 +1447,48 @@ function viewSamp(){
 }
 
 /* ---------- דיגום גז: בדיקות ---------- */
-/* נספח C להוראת עבודה 40002: זמן שטיפה בדקות בספיקה 150 מ"ל לדקה (החלטת דני: 150±10), לפי עומק וקוטר קידוח.
-   הזמנים כוללים מטר צנרת מחוץ לקרקע */
+/* נספח C להוראת עבודה 40002: זמן שטיפה בדקות לפי עומק וקוטר קידוח, בספיקות 100, 150 ו-200 מ"ל לדקה.
+   הזמנים כוללים מטר צנרת מחוץ לקרקע. שורת 1.5 מ' — 3 נפחים, השאר — 5 נפחים */
 const PURGE_DIA=['1"','1.25"','1.5"','2"','3"','4"','6"'];
-const PURGE_150=[[1.5,3,5,7,12,25,45,99],[2,6,9,12,20,43,74,166],[3,7,9,12,20,43,75,166],[4,7,10,13,21,44,75,167],
-  [5,8,10,13,21,44,76,167],[6,8,11,14,22,45,76,168],[7,9,11,14,22,45,77,168],[8,9,12,15,23,46,77,169],
-  [9,10,12,15,23,46,78,169],[10,10,13,16,24,47,78,170],[11,11,13,16,24,47,79,170],[12,11,14,17,25,48,79,171],
-  [13,12,14,17,25,48,80,171],[14,12,15,18,26,49,80,172],[15,13,15,18,26,49,81,172],[16,13,16,19,27,50,81,173],
-  [17,14,16,19,27,50,82,173],[18,14,17,20,28,51,82,174],[19,15,17,20,28,51,83,174],[20,15,18,21,29,52,83,175],
-  [21,16,18,21,29,52,84,175],[22,16,19,22,30,53,84,176],[23,17,19,22,30,53,85,176],[24,17,20,23,31,54,85,177],
-  [25,18,20,23,31,54,86,177],[26,18,21,24,32,55,86,178],[27,19,21,24,32,55,87,178],[28,19,22,25,33,56,87,179],
-  [29,20,22,25,33,56,88,179],[30,20,23,26,34,57,88,180]];
-/* עומק בין שורות — השורה העמוקה הבאה; עד 1.5 מ' — שורת 1.5; קוטר 1.75" — עמודת 2". כולם לכיוון שטיפה ארוכה יותר */
-function purgeNeeded(depth, dia){
+const PURGE_T={100:[[1.5,5,8,11,18,38,67,150],[2,9,13,18,30,64,112,249],[3,10,14,18,30,65,112,249],[4,11,14,19,31,65,113,250],[5,11,15,20,32,66,114,251],
+  [6,12,16,21,33,67,115,252],[7,13,17,21,33,68,115,252],[8,14,17,22,34,68,116,253],[9,14,18,23,35,69,117,254],[10,15,19,24,36,70,118,255],
+  [11,16,20,24,36,71,118,255],[12,17,20,25,37,71,119,256],[13,17,21,26,38,72,120,257],[14,18,22,27,39,73,121,258],[15,19,23,27,39,74,121,258],
+  [16,20,23,28,40,74,122,259],[17,20,24,29,41,75,123,260],[18,21,25,30,42,76,124,261],[19,22,26,30,42,77,124,261],[20,23,26,31,43,77,125,262],
+  [21,23,27,32,44,78,126,263],[22,24,28,33,45,79,127,264],[23,25,29,33,45,80,127,264],[24,26,29,34,46,80,128,265],[25,26,30,35,47,81,129,266],
+  [26,27,31,36,48,82,130,267],[27,28,32,36,48,83,130,267],[28,29,32,37,49,83,131,268],[29,29,33,38,50,84,132,269],[30,30,34,39,51,85,133,270]],
+ 150:[[1.5,3,5,7,12,25,45,99],[2,6,9,12,20,43,74,166],[3,7,9,12,20,43,75,166],[4,7,10,13,21,44,75,167],[5,8,10,13,21,44,76,167],
+  [6,8,11,14,22,45,76,168],[7,9,11,14,22,45,77,168],[8,9,12,15,23,46,77,169],[9,10,12,15,23,46,78,169],[10,10,13,16,24,47,78,170],
+  [11,11,13,16,24,47,79,170],[12,11,14,17,25,48,79,171],[13,12,14,17,25,48,80,171],[14,12,15,18,26,49,80,172],[15,13,15,18,26,49,81,172],
+  [16,13,16,19,27,50,81,173],[17,14,16,19,27,50,82,173],[18,14,17,20,28,51,82,174],[19,15,17,20,28,51,83,174],[20,15,18,21,29,52,83,175],
+  [21,16,18,21,29,52,84,175],[22,16,19,22,30,53,84,176],[23,17,19,22,30,53,85,176],[24,17,20,23,31,54,85,177],[25,18,20,23,31,54,86,177],
+  [26,18,21,24,32,55,86,178],[27,19,21,24,32,55,87,178],[28,19,22,25,33,56,87,179],[29,20,22,25,33,56,88,179],[30,20,23,26,34,57,88,180]],
+ 200:[[1.5,3,4,5,9,19,33,74],[2,5,6,9,15,32,56,124],[3,5,7,9,15,32,56,125],[4,5,7,10,16,33,57,125],[5,6,8,10,16,33,57,125],
+  [6,6,8,10,16,33,57,126],[7,6,8,11,17,34,58,126],[8,7,9,11,17,34,58,127],[9,7,9,11,17,35,58,127],[10,8,9,12,18,35,59,127],
+  [11,8,10,12,18,35,59,128],[12,8,10,13,19,36,60,128],[13,9,11,13,19,36,60,128],[14,9,11,13,19,36,60,129],[15,9,11,14,20,37,61,129],
+  [16,10,12,14,20,37,61,130],[17,10,12,14,20,38,61,130],[18,11,12,15,21,38,62,130],[19,11,13,15,21,38,62,131],[20,11,13,16,22,39,63,131],
+  [21,12,14,16,22,39,63,131],[22,12,14,16,22,39,63,132],[23,12,14,17,23,40,64,132],[24,13,15,17,23,40,64,133],[25,13,15,17,23,41,64,133],
+  [26,14,15,18,24,41,65,133],[27,14,16,18,24,41,65,134],[28,14,16,19,25,42,66,134],[29,15,17,19,25,42,66,134],[30,15,17,19,25,42,66,135]]};
+/* עומק בין שורות — השורה העמוקה הבאה; עד 1.5 מ' — שורת 1.5; קוטר 1.75" — עמודת 2". כולם לכיוון שטיפה ארוכה יותר.
+   ספיקה שבין הטבלאות — לפי הטבלה הקרובה, ביחס הפוך לספיקה. בלי ספיקה (או מחוץ לטווח) — 150.
+   vols — מס' הנפחים שנבחר לבאר, כשהוא שונה ממה שהטבלה מניחה */
+function purgeNeeded(depth, dia, flow, vols){
   const d=num(depth), c=PURGE_DIA.indexOf(dia==='1.75"'?'2"':dia);
   if(!(d>0) || c<0) return null;
-  const row=PURGE_150.find(r=>r[0]>=d);
-  return row ? row[c+1] : null;
+  let f=num(flow); if(!(f>=FLOW[0] && f<=FLOW[1])) f=150;
+  const near=[150,100,200].reduce((a,b)=>Math.abs(b-f)<Math.abs(a-f)?b:a);
+  const row=PURGE_T[near].find(r=>r[0]>=d);
+  if(!row) return null;
+  const base=row[0]<=1.5?3:5;
+  return Math.round(row[c+1]*near/f*(Number(vols)||base)/base);
 }
-/* מס' נפחי השטיפה לפי העומק: 3 עד 1.5 מ', 5 מעבר (הוראת עבודה 9.8.4.2). בטופס שדה אחד — לפי הבאר העמוקה */
-function purgeVolsNeeded(){
-  const ds=S.gas.wells.map(w=>num(w.depth)).filter(d=>d>0);
-  return ds.length ? (ds.some(d=>d>1.5)?"5":"3") : "";
+/* מס' נפחי השטיפה לפי העומק: 3 עד 1.5 מ', 5 מעבר (הוראת עבודה 9.8.4.2, הנחיות המשרד) */
+const purgeVolsFor=depth=>{ const d=num(depth); return d>0 ? (d>1.5?"5":"3") : ""; };
+/* הנפחים של באר: מה שנבחר בשורה שלה (דני, 23.11.2026), ואם לא נבחר — מה שנבחר ליום הדיגום */
+const wellVols=w=>w.purgeVols||S.gas.samp.purgeVols||"";
+/* בטופס 59 יש תא אחד לנפחי השטיפה. כשהבארות שונות — התא מציג את כולם, ובכל שורה הערך שלה נכתב בהערות */
+function purgeVolsForm(){
+  const v=S.gas.wells.map(wellVols), set=[...new Set(v.filter(Boolean))].sort();
+  return {text:set.length?set.join(" / "):S.gas.samp.purgeVols, mixed:set.length>1 || (set.length===1 && v.some(x=>!x))};
 }
 /* שעות בין סיום ההתקנה לתחילת הדיגום. null כשחסר נתון */
 function eqHours(w){
@@ -1252,16 +1496,18 @@ function eqHours(w){
   if(!i.date || !w.tEnd || !o.date || !w.sStart) return null;
   return (new Date(`${o.date}T${w.sStart}`)-new Date(`${i.date}T${w.tEnd}`))/3.6e6;
 }
-const EQ_HOURS=8, SHUT=[7.5,15], SHUT_DROP=.5, FLOW=[140,160], CAN_START=[26,30], CAN_END=[3,5];
+const EQ_HOURS=8, SHUT=[7.5,15], SHUT_DROP=.5, FLOW=[100,200], CAN_START=[26,30], CAN_END=[3,5];
 const outside=(x,[a,b])=>x<a||x>b;
 function wellSampIssues(w, full){
   const r=[], sampled=String(w.can||"").trim()!=="";
   if(full){
     const h=eqHours(w);
     if(h!=null && h<EQ_HOURS) r.push(`עברו ${h.toFixed(1)} שעות מסיום ההתקנה — נדרשות לפחות ${EQ_HOURS} (הנחיות המשרד, טבלה 2)`);
-    const need=purgeNeeded(w.depth,S.gas.inst.boreDia);
+    const need=purgeNeeded(w.depth,S.gas.inst.boreDia,w.flow,wellVols(w));
     if(need!=null && num(w.purgeMin)<need) r.push(`שטיפה ${w.purgeMin} דק׳ — נדרשות ${need} לפי נספח C`);
   }
+  const vols=wellVols(w), vn=purgeVolsFor(w.depth);
+  if(vols && Number(vols)<Number(vn)) r.push(`${vols} נפחי שטיפה — בעומק ${w.depth} מ׳ נדרשים ${vn} (הוראת עבודה 9.8.4.2)`);
   const vf=num(w.vacFrom), vt=num(w.vacTo);
   if(outside(vf,SHUT)) r.push(`מבחן אטימות: ${w.vacFrom} — מחוץ לטווח ${SHUT[0]} עד ${SHUT[1]} אינץ׳ כספית`);
   if(vf-vt>SHUT_DROP) r.push(`מבחן אטימות: ירידה של ${(vf-vt).toFixed(1)} — מעל ${SHUT_DROP}. יש לאתר דליפה`);
@@ -1305,21 +1551,23 @@ function gasQcCard(){
 /* ---------- דיגום גז: כרטיסים ---------- */
 const swell=(w,k)=>x=>setWell(w,k,x,"samp");
 function wellSampCard(w,i,manual){
-  const g=S.gas, full=!manual, bad=wellSampIssues(w,full), need=full?purgeNeeded(w.depth,g.inst.boreDia):null, h=full?eqHours(w):null;
+  const g=S.gas, full=!manual, bad=wellSampIssues(w,full), need=full?purgeNeeded(w.depth,g.inst.boreDia,w.flow,wellVols(w)):null, h=full?eqHours(w):null;
   const t=(k,label,opts,hint)=>field(label,txt(w[k],swell(w,k),opts),hint);
   const chip=(k,label)=>toggle(w[k],swell(w,k),label);
   const info=[full&&g.inst.date&&w.tEnd?`הותקנה ${fmtDate(g.inst.date)} ${w.tEnd}`:"",
     h!=null?`${h.toFixed(1)} שעות עד הדיגום`:"", need!=null?`שטיפה נדרשת ${need} דק׳`:""].filter(Boolean).join(" · ");
-  return el("div",{class:"well"+(bad.length?" bad":"")},
+  return el("div",{class:"well"+(bad.length?" bad":""),"data-id":w.id},
     el("div",{class:"wellhead"},el("b",{},`${i+1}. ${w.name||"באר"}`), w.depth?` · עומק ${w.depth} מ׳`:"", info?el("span",{class:"hint"},` · ${info}`):null),
     el("div",{class:"grid"},
       manual ? t("name","מס׳ הגשש",{ph:"SG-1"}) : null,
       manual ? t("depth","עומק",{type:"number",ph:"מ׳"}) : null,
       t("can","מס׳ הקניסטר"),
-      field("נפח",sel(w.vol,["1","6"],swell(w,"vol")),"ליטר"),
+      field("נפח",sel(w.vol,CAN_VOLS,swell(w,"vol")),"ליטר"),
       t("vacFrom","מבחן אטימות — מ-",{type:"number",ph:"in/hg"},"בין 7.5 ל-15"),
       t("vacTo","מבחן אטימות — עד",{type:"number",ph:"in/hg"},"אחרי דקה, ירידה עד 0.5"),
-      t("flow","ספיקת המשאבה",{type:"number",ph:"ml/min"},"150, סטייה עד 10"),
+      t("flow","ספיקת המשאבה",{type:"number",ph:"ml/min"},"בין 100 ל-200"),
+      field("מס׳ נפחי שטיפה",sel(w.purgeVols,PURGE_VOLS,swell(w,"purgeVols"),g.samp.purgeVols?`${g.samp.purgeVols} — כמו ביום הדיגום`:"—"),
+        purgeVolsFor(w.depth)?`לפי העומק: ${purgeVolsFor(w.depth)}`:null),
       t("purgeMin","משך השטיפה",{type:"number",ph:"דקות"},need!=null?`נדרש ${need}`:null),
       t("sStart","שעת התחלת הדיגום",{type:"time"}),
       t("sEnd","שעת סיום הדיגום",{type:"time"}),
@@ -1331,7 +1579,7 @@ function wellSampCard(w,i,manual){
       chip("ipa","בדיקת IPA בוצעה"), chip("to15","TO-15"), chip("dup","חזרה (Duplicate)"), chip("split","פיצול")),
     w.split ? el("div",{class:"grid",style:"margin-top:10px"},
       t("spCan","פיצול — מס׳ קניסטר"),
-      field("פיצול — נפח",sel(w.spVol,["1","6"],swell(w,"spVol")),"ליטר"),
+      field("פיצול — נפח",sel(w.spVol,CAN_VOLS,swell(w,"spVol")),"ליטר"),
       t("spCanFrom","פיצול — לחץ מ-",{type:"number",ph:"in/hg"},"בין 26 ל-30"),
       t("spCanTo","פיצול — לחץ עד",{type:"number",ph:"in/hg"},"בין 3 ל-5")) : null,
     bad.length ? el("div",{class:"note warn",style:"margin-top:10px"},bad.join(" · ")) : null);
@@ -1359,11 +1607,11 @@ function blankCard(b){
   const bad=[];
   if(outside(num(b.canFrom),CAN_START)) bad.push(`לחץ התחלתי ${b.canFrom} — מחוץ לטווח 26 עד 30`);
   if(outside(num(b.canTo),CAN_END)) bad.push(`לחץ בסיום ${b.canTo} — מחוץ לטווח 3 עד 5`);
-  return el("div",{class:"well"+(bad.length?" bad":"")},
+  return el("div",{class:"well"+(bad.length?" bad":""),"data-id":b.id},
     el("div",{class:"wellhead"},el("b",{},`${BLANK_LABEL[b.type]} · ${b.name}`)),
     el("div",{class:"grid"},
       t("name","שם"), t("can","מס׳ הקניסטר"),
-      field("נפח",sel(b.vol,["1","6"],x=>setBlank(b,"vol",x)),"ליטר"),
+      field("נפח",sel(b.vol,CAN_VOLS,x=>setBlank(b,"vol",x)),"ליטר"),
       t("sStart","שעת התחלה",{type:"time"}), t("sEnd","שעת סיום",{type:"time"}),
       t("canFrom","לחץ הקניסטר — מ-",{type:"number",ph:"in/hg"},"בין 26 ל-30"),
       t("canTo","לחץ הקניסטר — עד",{type:"number",ph:"in/hg"},"בין 3 ל-5"),
@@ -1397,15 +1645,15 @@ function scanImage(file){
   });
 }
 function certCard(){
-  const pages=S.canCert, full=pages.length>=CERT_MAX;
+  const pages=S.canCert, loading=S.certN>pages.length, full=pages.length>=CERT_MAX || (loading && certFail!==S.id);
   const count=n=>n>1?`${n} עמודים`:n?"עמוד אחד":"";
   const add=async f=>{
     if(!f || RO()) return;
+    const id=S.id;
     try{
       const url=await scanImage(f);
-      if(S.canCert.length>=CERT_MAX) return;
       /* הוספת עמוד היא מילוי ראשון, לא שינוי — לא נרשמת. הסרת עמוד נרשמת בתיעוד */
-      S.canCert=[...S.canCert,url]; save();
+      await certDo(()=>S.id===id && S.canCert.length<CERT_MAX ? certSet(id,[...S.canCert,url]) : null);
     }catch(e){ alert((e&&e.message)||e); }
   };
   const input=capture=>{
@@ -1423,15 +1671,19 @@ function certCard(){
       el("button",{class:"btn ghost",type:"button",disabled:RO()||full,onclick:()=>lib.click()},"מהתמונות"),
       el("span",{class:"spacer"}),
       pages.length?el("span",{class:"pill"},count(pages.length)):null, cam, lib),
-    full?el("div",{class:"sub",style:"margin-top:8px"},`עד ${CERT_MAX} עמודים`):null,
+    loading?el("div",{class:certFail===S.id?"note warn":"sub",style:"margin-top:8px"},certFail===S.id
+      ? "עמודי התעודה לא נמצאו באחסון המכשיר. יש לסרוק אותם שוב" : "טוען את התעודה…")
+      : full?el("div",{class:"sub",style:"margin-top:8px"},`עד ${CERT_MAX} עמודים`):null,
     pages.length?el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px"},
       ...pages.map((src,i)=>el("div",{},
-        el("img",{class:"shot",src,alt:`תעודת ניקיון — עמוד ${i+1}`}),
+        /* גובה קבוע: התמונה נטענת אחרי הבנייה, ובלי זה כל מה שמתחתיה קופץ */
+        el("img",{class:"shot",src,alt:`תעודת ניקיון — עמוד ${i+1}`,style:"width:100%;height:200px;object-fit:contain"}),
         el("div",{class:"bar",style:"margin-top:6px"},el("span",{class:"hint"},`עמוד ${i+1}`),el("span",{class:"spacer"}),
           el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>{
             if(!confirm(`להסיר את עמוד ${i+1} של תעודת הניקיון?`)) return;
             logChange(`תעודת ניקיון קניסטרים — הסרת עמוד ${i+1}`, count(S.canCert.length), count(S.canCert.length-1)||"הוסרה", "canCert.del");
-            S.canCert=S.canCert.filter((_,j)=>j!==i); save();
+            const id=S.id;
+            certDo(()=>S.id===id ? certSet(id,S.canCert.filter((_,j)=>j!==i)) : null);
           }},"הסר"))))):null);
 }
 /* PDF של התעודה: רוחב A4, הגובה לפי יחס הצילום */
@@ -1455,14 +1707,16 @@ const K_GPS="vasa-gps", GPS_SECS=30, GPS_MAX=2.5;
 function gpsOn(){ try{ return localStorage.getItem(K_GPS)==="1"; }catch(e){ return false; } }
 function setGpsOn(on){ try{ on?localStorage.setItem(K_GPS,"1"):localStorage.removeItem(K_GPS); }catch(e){} render(); }
 
-/* WGS84 → ITM (EPSG:2039): העתקת הלמרט (towgs84 של EPSG:2039, הפוך) ואז טרנסוורס מרקטור על GRS80 — כמו templates/itm.py */
+/* WGS84 → ITM (EPSG:2039): העתקת הלמרט ואז טרנסוורס מרקטור על GRS80. הפרמטרים (ITM→WGS84, כאן הפוך) כפי שמתפרסמים
+   ל-EPSG:2039: 23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262. עד 23.11.2026 שימשו פרמטרים אחרים — הפרש של 0.6–2.6 מ׳ */
 function wgs2itm(lat,lon){
   const rad=Math.PI/180;
   const ecef=(la,lo,a,f)=>{ const e2=f*(2-f), sl=Math.sin(la*rad), N=a/Math.sqrt(1-e2*sl*sl);
     return [N*Math.cos(la*rad)*Math.cos(lo*rad), N*Math.cos(la*rad)*Math.sin(lo*rad), N*(1-e2)*sl]; };
   let [x,y,z]=ecef(lat,lon,6378137,1/298.257223563);
-  const r=Math.PI/(180*3600), tx=24.0024, ty=17.1032, tz=17.8444, rx=.33077*r, ry=1.85269*r, rz=-1.66969*r, s=1/(1+5.4248e-6);
-  [x,y,z]=[tx+s*(x-rz*y+ry*z), ty+s*(rz*x+y-rx*z), tz+s*(-ry*x+rx*y+z)];
+  const r=Math.PI/(180*3600), rx=-.3132*r, ry=-1.85274*r, rz=1.67299*r, s=1-5.4262e-6;
+  [x,y,z]=[(x-23.772)/s, (y-17.49)/s, (z-17.859)/s];
+  [x,y,z]=[x+rz*y-ry*z, -rz*x+y+rx*z, ry*x-rx*y+z];
   const a=6378137, f=1/298.257222101, e2=f*(2-f), ep2=e2/(1-e2);
   const lo=Math.atan2(y,x), p=Math.hypot(x,y);
   let la=Math.atan2(z,p*(1-e2));
@@ -1554,8 +1808,8 @@ function soilCoordsCard(){
   return coordsCard("מיקום הקידוחים","נ״צ אחד לכל קידוח ביומן השדה", borings.map(b=>{
     const c=S.coords[b]||{};
     return {label:b, c, ro:RO(),
-      manual:(k,v)=>{ logChange(`נ״צ ${k.toUpperCase()} · קידוח ${b}`, c[k]||"", v, `coords.${b}.${k}`);
-        S.coords[b]={...c,[k]:v,acc:"",t:"",src:"ידני"}; save(); },
+      manual:(k,v)=>{ logChange(`נ״צ ${k.toUpperCase()} · קידוח ${b}`, (S.coords[b]||{})[k]||"", v, `coords.${b}.${k}`);
+        S.coords[b]={...(S.coords[b]||{}),[k]:v,acc:"",t:"",src:"ידני"}; save(); },
       gps:p=>{ S.coords[b]={...p,src:"GPS"}; save(); }};
   }));
 }
@@ -1632,7 +1886,7 @@ function viewLog(){
   const v=el("div",{}), tb=el("tbody",{});
   S.samples.forEach((sm,i)=>{
     const hot=parseFloat(sm.pid)>=PID_HOT;
-    tb.append(el("tr",{class:hot?"hot":""},
+    tb.append(el("tr",{class:hot?"hot":"","data-id":sm.id},
       el("td",{class:"rownum"},String(i+1)),
       el("td",{class:"mono"}, txt(sm.boring,x=>setSample(sm,"boring",x,"מס׳ קידוח"),{ph:"ק1"})),
       el("td",{class:"mono"}, txt(sm.depth,x=>setSample(sm,"depth",x,"עומק"),{type:"number",ph:"מ׳"})),
@@ -2052,7 +2306,7 @@ function viewHist(){
   return el("div",{},el("div",{class:"card"},
     el("h2",{},"תיעוד שינויים"),
     el("div",{class:"sub"},"נרשם רק שינוי של ערך קיים, אחרי שהשינוי התייצב. הזנה ראשונה לשדה ריק, או נגיעה בשדה בלי לשנות אותו, אינן נרשמות. "+
-      (isGas()?"מבצע השינוי הוא הדוגם של היום שבו נעשה השינוי — ההתקנה או הדיגום. ":"מבצע השינוי הוא דוגם 1. ")+"אינו ניתן למחיקה"),
+      (isGas()?"מבצע השינוי הוא הדוגם של היום שבו נעשה השינוי — ההתקנה או הדיגום. ":"מבצע השינוי הוא דוגם 1. ")+"אינו ניתן למחיקה, ונשמר במכשיר גם אחרי מחיקת הרשומה"),
     items.length?el("ul",{class:"hist"},items.map(c=>el("li",{},
       el("span",{class:"what"},c.label),
       el("span",{class:"when"},new Date(c.t).toLocaleString("he-IL")),
@@ -2487,7 +2741,7 @@ async function renderInst(){
 /* שורות טופס 59: כל הבארות ואחריהן הבלאנקים. בפיצול — הבארות שסומנו לפיצול, עם קניסטר הפיצול */
 function gasCustodyRows(isSplit){
   const g=S.gas;
-  const well=w=>({well:w, name:w.name, depth:w.depth, vacFrom:w.vacFrom, vacTo:w.vacTo, flow:w.flow, purgeMin:w.purgeMin,
+  const well=w=>({well:w, name:w.name, depth:w.depth, vacFrom:w.vacFrom, vacTo:w.vacTo, flow:w.flow, purgeMin:w.purgeMin, vols:wellVols(w),
     pidAfter:w.pidAfter, ipa:w.ipa, sStart:w.sStart, sEnd:w.sEnd, to15:w.to15,
     ...(isSplit ? {can:w.spCan, vol:w.spVol, canFrom:w.spCanFrom, canTo:w.spCanTo, note:w.sNote}
                 : {can:w.can, vol:w.vol, canFrom:w.canFrom, canTo:w.canTo, note:[w.dup?"חזרה":"",w.sNote].filter(Boolean).join(" · ")})});
@@ -2501,7 +2755,7 @@ const gasTube = () => S.gas.mode==="manual" ? S.gas.samp.tube
 async function renderGasCoc(isSplit){
   const F=F59, h=S.head, g=S.gas, o=g.samp, rows=gasCustodyRows(isSplit), per=F.per[0], H=F.head;
   const HK=HAND[isSplit?"split":"coc"], ho=HK.ho(), pages=[];
-  const n=Math.max(1,Math.ceil(rows.length/per));
+  const n=Math.max(1,Math.ceil(rows.length/per)), pv=purgeVolsForm();
   const sup=o.canSupplier===OTHER?o.canSupplierOther:o.canSupplier;
   for(let p=0;p<n;p++){
     const pg=await formPage(F,0), gg=pg.g, start=p*per;
@@ -2518,7 +2772,7 @@ async function renderGasCoc(isSplit){
     put(gg,h.site,H.site); put(gg,h.address,H.address); put(gg,fmtFull(o.date),H.date); put(gg,h.billTo,H.billTo);
     put(gg,o.s1,H.s1); await sign(gg,S.sigs.gs,H.s1sig); put(gg,h.approver,H.approver);
     put(gg,h.client,H.client); put(gg,h.contact,H.contact);
-    put(gg,fmtFull(gasInstDate()),H.instDate); put(gg,gasTube(),H.tube); put(gg,o.purgeVols,H.purgeVols);
+    put(gg,fmtFull(gasInstDate()),H.instDate); put(gg,gasTube(),H.tube); put(gg,pv.text,H.purgeVols);
     put(gg,sup,H.canSupplier); put(gg,fmtFull(o.canDate),H.canDate);
     put(gg,o.pid,H.pid); put(gg,o.lamp,H.lamp,{ltr:true}); put(gg,o.weather,H.weather);
     if(o.calLab) tick(gg,H.calLab); if(o.cal100) tick(gg,H.cal100);
@@ -2541,7 +2795,7 @@ async function renderGasCoc(isSplit){
       if(r.ipa) tick(gg,box(9),3.4);
       put(gg,r.sStart,box(10),c); put(gg,r.sEnd,box(11),c); put(gg,r.canFrom,box(12),c); put(gg,r.canTo,box(13),c);
       if(r.to15) tick(gg,box(14),3.4);
-      put(gg,r.note,box(15),{size:7});
+      put(gg,[pv.mixed&&r.vols?`${r.vols} נפחי שטיפה`:"",r.note].filter(Boolean).join(" · "),box(15),{size:7});
     });
   }
   const notes=[isSplit?"משמורת פיצול.":"", isSplit&&labName("labSplit")?`מעבדה משנית: ${labName("labSplit")}.`:"",
@@ -2827,7 +3081,7 @@ function gasWorkbookSheets(){
   }
   sec("יום הדיגום — טופס 59");
   kv("תאריך הדיגום",fmtFull(o.date)); kv("דוגם",o.s1); kv("תאריך ההתקנה",fmtFull(gasInstDate()));
-  kv("סוג וקוטר הצנרת",gasTube()); kv("מס׳ נפחי שטיפה",xnum(o.purgeVols));
+  kv("סוג וקוטר הצנרת",gasTube()); kv("מס׳ נפחי שטיפה",xnum(purgeVolsForm().text));
   kv("ספק הקניסטר",o.canSupplier===OTHER?o.canSupplierOther:o.canSupplier); kv("תאריך אספקה",fmtFull(o.canDate));
   kv("מכשיר PID",o.pid); kv("נורה ב-PID",o.lamp);
   kv("כיול מעבדה בתוקף",yn(o.calLab)); kv("כיול 100 ppm יומי",yn(o.cal100)); kv("מזג האוויר",jv(o.weather));
@@ -2858,15 +3112,15 @@ function gasWorkbookSheets(){
       xnum(w.depth),w.profile,w.note,...(withC?(atSamp(w)?noC:coordCells(wc(w))):[])]),
     [10,11,11,11,12,12,11,12,11,28,28,...(withC?COORD_W:[])], new Set([9,10])));
   const coc=(name,isSplit)=>{
-    const cs=!isSplit && withCs;
+    const cs=!isSplit && withCs, mv=purgeVolsForm().mixed;
     return tableSheet(name,
     ["מס׳ הגשש","מס׳ הקניסטר","נפח (ליטר)","עומק (מטר)","בדיקת ואקום מ- (in/hg)","בדיקת ואקום עד (in/hg)",
      "ספיקת המשאבה (ml/min)","משך השטיפה (דקות)","PID לאחר הדיגום (ppm)","בדיקת IPA","שעת התחלת הדיגום","שעת סיום הדיגום",
-     "לחץ הקניסטר מ- (in/hg)","לחץ הקניסטר עד (in/hg)","TO-15","הערות",...(cs?COORD_HEAD:[])],
+     "לחץ הקניסטר מ- (in/hg)","לחץ הקניסטר עד (in/hg)","TO-15","הערות",...(mv?["מס׳ נפחי שטיפה"]:[]),...(cs?COORD_HEAD:[])],
     gasCustodyRows(isSplit).map(r=>[r.name,r.can,xnum(r.vol),xnum(r.depth),xnum(r.vacFrom),xnum(r.vacTo),xnum(r.flow),
-      xnum(r.purgeMin),xnum(r.pidAfter),r.ipa?"V":"",r.sStart,r.sEnd,xnum(r.canFrom),xnum(r.canTo),r.to15?"V":"",r.note,
+      xnum(r.purgeMin),xnum(r.pidAfter),r.ipa?"V":"",r.sStart,r.sEnd,xnum(r.canFrom),xnum(r.canTo),r.to15?"V":"",r.note,...(mv?[xnum(r.vols||"")]:[]),
       ...(cs?(r.well&&atSamp(r.well)&&hasC(r.well)?coordCells(wc(r.well)):noC):[])]),
-    [10,12,8,8,11,11,11,10,11,8,10,10,11,11,7,28,...(cs?COORD_W:[])], new Set([15]));
+    [10,12,8,8,11,11,11,10,11,8,10,10,11,11,7,28,...(mv?[9]:[]),...(cs?COORD_W:[])], new Set([15]));
   };
   sheets.push(coc("שרשרת משמורת",false));
   if(split) sheets.push(coc("משמורת פיצול",true));
@@ -2992,7 +3246,7 @@ async function importInstallFile(o, fname){
     to:`${fname} · נשלח ${whenShort(o.exportedAt)} מהאייפד של ${o.by||"הדוגם המתקין"}`});
   d.updated=stamp();
   flash=null;
-  await switchTo(normalize(d));
+  if(!await switchTo(normalize(d))) return;
   persistLocal();
   active="samp";
   flash=`ההתקנה יובאה: ${S.gas.wells.length} בארות. ממלאים כאן את יום הדיגום.`;
@@ -3057,7 +3311,8 @@ const MAIL_KINDS=[
   {kind:"log",   label:"יומן שדה — PDF",           def:()=>true},
   {kind:"coc",   label:"שרשרת משמורת — PDF",       def:()=>custodyRows(false).length>0},
   {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:hasSplit},
-  {kind:"xlsx",  label:"Excel ללקוח",              def:()=>false}
+  /* מסומן (דני, 23.11.2026): תיעוד השינויים נמצא רק באקסל, וכך הוא מגיע לתיק הלקוח */
+  {kind:"xlsx",  label:"Excel ללקוח",              def:()=>true}
 ];
 /* גז קרקע — דני (18.11.2026): בסוף יום ההתקנה נשלחים רק טופס ההתקנה וקובץ הנתונים.
    בסוף יום הדיגום: טופס ההתקנה, שרשרת משמורת (ופיצול כשיש), Excel, ותעודת ניקיון כשיש.
@@ -3213,7 +3468,7 @@ function viewDocs(){
   const list=el("ul",{class:"docs"});
   for(const d of docs){
     const cur=d.id===S.id;
-    list.append(el("li",{},el("button",{type:"button",class:"docrow"+(cur?" cur":""),
+    list.append(el("li",{class:canDelete(d)?"delrow":null},el("button",{type:"button",class:"docrow"+(cur?" cur":""),
         "aria-current":cur?"true":null, onclick:()=>openDoc(d.id)},
       el("span",{class:"dt"},d.title),
       el("span",{class:"dm"},[d.client, `${d.n||0} ${d.kind==="gas"?"בארות":"דגימות"}`, d.updated?`עודכן ${when(d.updated)}`:"טרם נשמרה"]
@@ -3222,12 +3477,14 @@ function viewDocs(){
         d.kind==="gas"?el("span",{class:"pill"},"גז קרקע"):null,
         cur?el("span",{class:"pill live"},"פתוחה כעת"):null,
         d.locked?el("span",{class:"pill lock"},"נעולה"):null,
-        !cur&&!onDevice.has(d.id)?el("span",{class:"pill"},"במאגר המשותף"):null))));
+        !cur&&!onDevice.has(d.id)?el("span",{class:"pill"},"במאגר המשותף"):null)),
+      canDelete(d)?el("button",{type:"button",class:"btn ghost sm","aria-label":`מחיקת ${d.title}`,onclick:()=>askDelete(d)},"מחיקה"):null));
   }
+  const st=storeState();
   return el("div",{},el("div",{class:"card"},
     el("h2",{},"רשומות"),
     el("div",{class:"sub"},(db?"ימי הדיגום במכשיר הזה ובמאגר המשותף. ":"ימי הדיגום שנשמרו במכשיר הזה. ")+
-      "שם הרשומה נבנה מהאתר, התאריך, אות היום ודוגם 1"),
+      "שם הרשומה נבנה מהאתר, התאריך, אות היום ודוגם 1. אפשר למחוק רשומה חודש וחצי אחרי העבודה או העריכה האחרונה"),
     el("div",{class:"bar",style:"margin:0 0 14px"},
       el("button",{class:"btn",type:"button",onclick:newDocDialog},"שמירה ורשומה חדשה"),
       el("button",{class:"btn ghost",type:"button",onclick:importInstall},"ייבוא התקנה"),
@@ -3237,6 +3494,10 @@ function viewDocs(){
     /* הגדרה של המכשיר, לא של הרשומה — לכן לא תלויה בנעילת הרשומה הפתוחה */
     el("div",{class:"card"},
       el("h2",{},"המכשיר הזה"),
+      el("div",{class:"bar",style:"margin:0 0 12px"},
+        el("span",{class:"pill"+(st.pct>=STORE_WARN?" lock":"")},`אחסון: ${pctText(Math.min(1,st.pct))}`),
+        goneN?el("span",{class:"pill"},`${goneN} רשומות נמחקו`):null,
+        goneN?el("button",{class:"btn ghost sm",type:"button",onclick:exportGone},"תיעוד השינויים שלהן"):null),
       el("div",{class:"sub"},"מדלקים רק באייפד עם כרטיס SIM (יש בו GPS) או עם מקלט GPS חיצוני מחובר. כשכבוי — אין כפתור מדידת מיקום"),
       el("div",{class:"chips"},el("button",{class:"chip",type:"button","aria-pressed":String(gpsOn()),
         onclick:()=>setGpsOn(!gpsOn())},"מדידת מיקום ב-GPS"))));
@@ -3262,12 +3523,64 @@ let active="day";
 /* בנייה מחדש בזמן שגלגלת שעה/תאריך פתוחה מחליפה את השדה מתחתיה והחלונית קופצת
    (למשל כששינוי קודם נרשם בתיעוד אחרי 3 שניות). הבנייה נדחית עד שהחלונית נסגרת */
 let renderWaiting=false;
-function render(){
+function pickerOpen(){
   const a=document.activeElement;
-  if(a && a.matches && a.matches("main input[type=time], main input[type=date]")){
-    if(!renderWaiting){ renderWaiting=true; a.addEventListener("blur",()=>{ renderWaiting=false; render(); },{once:true}); }
-    return;
+  if(!(a && a.matches && a.matches("main input[type=time], main input[type=date]"))) return false;
+  if(!renderWaiting){ renderWaiting=true; a.addEventListener("blur",()=>{ renderWaiting=false; renderSoon(); },{once:true}); }
+  return true;
+}
+/* בזמן הקלדה לא בונים את המסך מחדש: השדה הפעיל נשאר במקומו, ורק מה שסביבו מתחלף (patchAround).
+   לפני כן כל מעבר בין שדות, וכל רישום בתיעוד (3 שניות אחרי שינוי), מחק את השדה הפעיל: ההקלדה נפלה,
+   המסך קפץ, ומה שעוד לא נשמר אבד (דיווח מהשטח, 23.11.2026) */
+let drawnKey="", drawnS=null, soonT=null, pointerAt=0;
+const viewKey=()=>[active,S.id,!!S.locked].join("|");
+const editing=()=>{ const a=document.activeElement;
+  return a && a.matches && a.matches("main input:not([type=file]), main textarea, main select") ? a : null; };
+const commitField=()=>{ const a=editing(); if(a) a.blur(); };
+addEventListener("pointerdown",()=>{ pointerAt=Date.now(); },true);
+for(const ev of ["pointerup","pointercancel"]) addEventListener(ev,()=>{ pointerAt=0; },true);
+/* לחיצה על כפתור שומרת קודם את השדה הפתוח — באייפד כפתור לא מוציא ממנו את הסמן */
+addEventListener("click",e=>{ if(e.target.closest && e.target.closest("button,a")) commitField(); },true);
+function renderSoon(){
+  clearTimeout(soonT);
+  /* אצבע או עכבר לחוצים — מחכים לשחרור, כדי שהלחיצה תגיע לכפתור שנלחץ */
+  soonT=setTimeout(()=>{ if(pointerAt && Date.now()-pointerAt<4000) return renderSoon(); soonT=null; if(!pickerOpen()) draw(); }, pointerAt?60:0);
+}
+function render(){
+  if(pickerOpen()) return;
+  if(viewKey()===drawnKey && drawnS===S && (typing || editing())) return renderSoon();
+  draw();
+}
+const nodeSig=x=>{ const t=x.querySelector("h2,label,b"); return x.tagName+"|"+(x.dataset.id||(t?t.textContent:"")); };
+/* o — התוכן על המסך, n — התוכן החדש. מחליף הכול חוץ מהשדה הפעיל ומה שעוטף אותו. false — המבנה סביבו השתנה */
+function patchAround(o,n,focus){
+  const plan=[];
+  let a=o, b=n;
+  while(a!==focus){
+    const ac=[...a.children].find(c=>c.contains(focus)), A=[...a.childNodes], B=[...b.childNodes];
+    let bc;
+    if(A.length===B.length) bc=B[A.indexOf(ac)];
+    else{
+      const same=L=>L.filter(x=>x.nodeType===1 && nodeSig(x)===nodeSig(ac)), m=same(B);
+      if(m.length!==1 || same(A).length!==1) return false;
+      bc=m[0];
+    }
+    if(!bc || bc.nodeType!==1 || bc.tagName!==ac.tagName || (bc.dataset.id||"")!==(ac.dataset.id||"")) return false;
+    const label=x=>{ const l=x.classList.contains("f") && x.querySelector("label"); return l?l.textContent:""; };
+    if(label(ac)!==label(bc)) return false;
+    plan.push([a,b,ac,bc]); a=ac; b=bc;
   }
+  if(b.type!==a.type || b.disabled!==a.disabled) return false;
+  for(const [p,q,ac,bc] of plan){
+    const B=[...q.childNodes], k=B.indexOf(bc);
+    for(const x of [...p.childNodes]) if(x!==ac) x.remove();
+    ac.before(...B.slice(0,k)); ac.after(...B.slice(k+1));
+    if(ac!==focus) ac.className=bc.className;
+  }
+  return true;
+}
+function draw(){
+  clearTimeout(soonT); soonT=null;
   const nav=document.getElementById("tabs");
   nav.textContent="";
   /* לשונית שאינה קיימת בסוג הרשומה הפתוחה — חוזרים לפרטים */
@@ -3283,9 +3596,18 @@ function render(){
     const s=document.getElementById("v-"+t.id);
     s.hidden = active!==t.id;
     if(!s.hidden){
-      s.textContent="";
-      if(flash) s.append(el("div",{class:"note",style:"margin-bottom:14px"},flash));
-      s.append(t.view());
+      const key=viewKey(), same=key===drawnKey && drawnS===S, a=same?editing():null;
+      const next=el("div",{},flash?el("div",{class:"note",style:"margin-bottom:14px"},flash):null,t.view());
+      const top=a && s.contains(a) ? a.getBoundingClientRect().top : null;
+      if(top!=null && patchAround(s,next,a)) window.scrollBy(0,a.getBoundingClientRect().top-top);
+      else{
+        const y=window.scrollY;
+        /* הערך שבשדה הפתוח נשמר לפני שהשדה מוחלף */
+        if(same) commitField();
+        s.textContent=""; s.append(...next.childNodes);
+        if(same) window.scrollTo(0,y);
+      }
+      drawnKey=key; drawnS=S;
     }
   }
   const bar=document.getElementById("docbar");
@@ -3299,7 +3621,15 @@ function render(){
   document.getElementById("fullPill").hidden=!storageFull;
 }
 
-function persistNow(){ flushChanges(); if(!pristine(S)){ S.updated=stamp(); persistLocal(); } }
+function persistNow(){
+  commitField();
+  const n=S.changes.length;
+  flushChanges();
+  if(pristine(S)) return;
+  /* סגירת האפליקציה אינה עריכה — רשומה ישנה שרק נפתחה לעיון לא נעשית "חדשה" (גיל הרשומה קובע מתי מותר למחוק) */
+  if(S.changes.length!==n) S.updated=stamp();
+  persistLocal();
+}
 addEventListener("pagehide",persistNow);
 
 /* ============ אפליקציה מותקנת — עבודה בלי קליטה, עדכונים, התקנה ============
@@ -3326,14 +3656,18 @@ function installHint(){
 
 function setupApp(){
   const upd=document.getElementById("updPill"), inst=document.getElementById("installPill");
-  upd.onclick=()=>{ persistNow(); location.reload(); };
+  upd.onclick=()=>{
+    persistNow();
+    if(storageFull && !db && !confirm("האחסון במכשיר מלא והרשומה הפתוחה לא נשמרה. רענון ימחק את השינויים האחרונים. לרענן בכל זאת?")) return;
+    location.reload();
+  };
   if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
     const sw=navigator.serviceWorker;
     sw.onmessage=e=>{ if(e.data && e.data.type==="update-ready") upd.hidden=false; };
     /* בפתיחה, וגם כשחוזרים לאפליקציה — באייפד אפליקציה מותקנת בדרך כלל ממשיכה ולא נטענת מחדש */
     const check=()=>{ if(sw.controller) sw.controller.postMessage({type:"check-update"}); };
     sw.register("sw.js").then(check).catch(()=>{});
-    document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") check(); });
+    document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ check(); checkStorage(); } });
   }
   /* מבקש מהדפדפן לא למחוק את הרשומות כשהמכשיר מתמלא */
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
@@ -3353,6 +3687,8 @@ function setupApp(){
   const d=cur?readJSON(kDoc(cur)):null;
   S = d ? normalize(d) : blankDay();
   render();
+  loadCert(); moveOldCerts(); loadGone();
+  certDo(()=>{ checkStorage(); if(active==="docs") render(); });
 
   db=await useCap("db");
   if(db){
