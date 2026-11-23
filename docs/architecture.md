@@ -141,7 +141,7 @@ In an imported record the installation part is read-only: `instRO(build)` sets `
 
 Well sampling fields (`SAMP_LABEL`): `can, vol, vacFrom, vacTo` (shut-in), `flow, purgeMin, pidAfter, ipa, sStart, sEnd, canFrom, canTo, to15` (default true), `sNote`, `dup` (lab duplicate from the same canister), `split` + `spCan, spVol, spCanFrom, spCanTo` (second canister on a T-splitter, to the secondary lab). These are not in the installation data file, and `updateFromInstall` never touches them. `viewSamp` shows a card per well (`wellSampCard`) and per blank (`blankCard`); in manual mode the card also has probe number and depth, and wells are added there.
 
-Checks (`wellSampIssues`, Danny's rules 16.11.2026): shut-in start 7.5–15 inHg and drop ≤ 0.5; flow 140–160; canister start 26–30, end 3–5 (also for the split canister and blanks); end before start; IPA not ticked on a sampled well; split ticked without a canister. Full mode only: ≥ 8 h from installation end to sampling start (`eqHours`), and purge minutes ≥ `purgeNeeded(depth, boreDia)` from appendix C at 150 ml/min (`PURGE_150`; deeper row, 1.5 m minimum row, 1.75" → 2"). The header's purge-volume count is compared with `purgeVolsNeeded()` (5 if any well is deeper than 1.5 m, else 3).
+Checks (`wellSampIssues`, Danny's rules 16.11.2026): shut-in start 7.5–15 inHg and drop ≤ 0.5; flow 100–200 (Danny 23.11.2026); purge volumes per well (`purgeVols`, default from the day — `wellVols`, printed by `purgeVolsForm`) not fewer than the depth requires; purge minutes from appendix C by rate (`PURGE_T`, full mode); canister start 26–30, end 3–5 (also for the split canister and blanks); end before start; IPA not ticked on a sampled well; split ticked without a canister. Full mode only: ≥ 8 h from installation end to sampling start (`eqHours`), and purge minutes ≥ `purgeNeeded(depth, boreDia)` from appendix C at 150 ml/min (`PURGE_150`; deeper row, 1.5 m minimum row, 1.75" → 2"). The header's purge-volume count is compared with `purgeVolsNeeded()` (5 if any well is deeper than 1.5 m, else 3).
 
 QC (`gasQc`, guidelines): only from 10 sampled wells (wells with a canister number); then duplicate and split `ceil(n/20)` each, and at least one blank on the day. Handover: `gasDeadline` shows "deliver by" = last sampling end + 72 h, and warns per lab if the lab received it later.
 
@@ -159,13 +159,23 @@ QC (`gasQc`, guidelines): only from 10 sampled wells (wells with a canister numb
 
 ## Rendering
 
-`render()` rebuilds the tab bar, the **active tab's whole section**, and the top bar after every `save()`. The views (`viewDay`, `viewLog`, `custodyView(kind)`, `viewHand`, `viewHist`, `viewDocs`) return fresh DOM built with `el(tag, attrs, ...children)`. Inputs commit on `change` (blur or select), not on `input`, so a rebuild never interrupts typing.
+`render()` rebuilds the tab bar, the **active tab's whole section**, and the top bar after every `save()`. The views (`viewDay`, `viewLog`, `custodyView(kind)`, `viewHand`, `viewHist`, `viewDocs`) return fresh DOM built with `el(tag, attrs, ...children)`. Inputs commit on `change` (blur or select), not on `input`, and the handlers of `txt` / `area` / `sel` run inside `fromField`, so the rebuild they cause is deferred.
+
+**The focused field is never rebuilt.** `render()` calls `draw()` at once unless the view is unchanged (`viewKey`, same `S`) and either a field has focus or the call came from a field; then `renderSoon()` draws after the focus change has settled and no pointer is down. `draw()` then uses `patchAround(old, new, focus)`: the focused element and its ancestors stay in the DOM, every other node is replaced by the new one, and the scroll is compensated. If the structure around the field changed it falls back to a full rebuild after committing the field. A kept field keeps its **old handler**, so handlers must read `S` when they run, not values captured when drawn. Repeating cards and rows carry `data-id` so a field is never matched to another well or sample. A click on any button first commits the open field (`commitField`), because on iPad a button does not take focus.
 
 Form helpers: `field(label, node, hint)`, `txt(val, on, {type, ph})`, `area`, `sel(val, list, on)`, `multi` (multi-select chips), `toggle` (one boolean chip). All pass `disabled: RO()`, where `RO()` is `S.locked`.
 
 **Time and date inputs commit on blur, not on `change`.** The iPad's wheel picker fires `change` on every spin, and a save there rebuilds the section and replaces the input under the open picker, so the picker jumps. `txt` marks the value dirty while the input has focus and calls `on` on blur. `render()` also returns early while a `main input[type=time|date]` has focus, and re-runs once on its blur. Any re-render can hit this, e.g. a change-log commit firing 3 s after an earlier edit. Keep both guards if you touch `txt` or `render`.
 
 Signatures (`pad`) and the sketch are `<canvas>` elements drawn with pointer events. On pointer-up they're stored as PNG data URLs. They're drawn in the screen's text colour and recoloured to black (`inked`) when printed.
+
+**Images need a fixed height** in anything above the fields: they decode after the rebuild and would push the content down.
+
+### Canister certificate and coordinates
+
+`S.canCert` (JPEG data URLs, up to `CERT_MAX`) is held in memory; on the device it is stored in IndexedDB (`vasa-files` / `cert`, key = record id), and `persistLocal` writes the record without it once `certMoved` has the id. `S.certN` is the page count, so opening a record knows to load (`loadCert`). Writes are verified by reading back before the pages leave the record. All access is serialised through `certDo`. Without IndexedDB the pages stay in the record. `moveOldCerts` migrates records written before 23.11.2026.
+
+`S.coords` (soil, keyed by borehole) and `gx/gy/gacc/gt/gsrc/gday` on each gas well hold ITM coordinates; see [decisions](decisions.md#19112026--coordinates-gps).
 
 ## Change log (ISO 17025)
 
@@ -211,7 +221,8 @@ Each sampling day is a separate record. `localStorage` keys:
 | `vasa-install-hint` | `"off"` once the iPad install hint has been dismissed |
 
 - `save()` stamps `updated`, then `persistLocal()` writes the record and index synchronously, then re-renders. A remote push is debounced by 700 ms.
-- If `localStorage` throws (quota), `storageFull` shows a red pill: "the last change was not saved". iOS gives about **5 MB per origin**, and signatures and sketch images are the bulk. See [roadmap](roadmap.md#storage-capacity).
+- If `localStorage` throws (quota), `storageFull` shows a red pill: "the last change was not saved". iOS gives about **5 MB per origin**, and signatures and sketch images are the bulk (certificate pages are in IndexedDB). While `storageFull`, `switchTo` refuses to leave an unsaved record and returns false — callers must check it.
+- Deletion and storage: `deleteDoc` (45 days, `canDelete`), `checkStorage` / `cleanupPlan` (80% → 50%), `storeState`. The quota is not exposed by the browser: 5 MB is assumed, counted as the browser does (two bytes per character once a value has a non-Latin character), corrected downwards when a save fails (`vasa-cap`) and to 10 MB when more than 5 MB fits. The change log of deleted records is in IndexedDB `vasa-files` / `gone`. See [roadmap](roadmap.md#storage-capacity).
 - **"שמירה ורשומה חדשה"** saves the open record and opens `newDocDialog`: soil, gas full (installation and sampling), or gas sampling-only. A pristine soil record (`updated === ""`) is never stored. A new gas record is stored at once (still pristine) so a restart reopens it as gas; `switchTo` drops a pristine stored record (`dropLocal`) when leaving it.
 - The record title is built by `docTitle()`: `site · date · day letter · sampler 1`, or for gas `site · גז קרקע · date · sampler`.
 - An installed iOS web app has **its own storage**, separate from Safari's. Removing the icon deletes the records. `navigator.storage.persist()` is requested on startup.

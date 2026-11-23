@@ -2,11 +2,31 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 23.11.2026 — Soil gas: purge rate, purge volumes per well, 1.4 L canister
+
+- **Purge rate 100–200 ml/min** (Danny), replacing 150±10 of 16.11; no other message about the rate. WI 40002 clause 9.8.4.3 still says 150±10.
+  - Engineering: the purge-time check followed the 150 column of appendix C and would have raised a false error at other rates, so it now uses the 100 / 150 / 200 tables (read from the document; 150 unchanged), inversely scaled between them, and scaled by the number of volumes chosen.
+- **Purge volumes per well, 3 or 5** (Danny). The sampling-day value is the default for all wells. Form 59 has one cell for it and stays as is: when wells differ the cell prints "3 / 5" and each row's value goes in its notes; the Excel custody sheet gets a column. One value for all wells prints exactly as before. A warning appears only for fewer volumes than the depth requires (3 to 1.5 m, 5 deeper — WI 9.8.4.2, MoEP guidelines).
+- **Canister volume 1.4 L** added (Danny), for wells, splits and blanks.
+
+## 23.11.2026 — Screen jumping while typing, and device storage full (field report)
+
+- **Cause of the jump:** every field commit rebuilt the whole section synchronously during blur, replacing the field just tapped; the 3-second change-log commit did the same to a field being typed in, and the uncommitted text was lost. The canister certificate thumbnails, which have no height until decoded, moved everything below them on each rebuild.
+- **Fix:** while a field has focus, or the render came from a field, the rebuild is deferred and done *around* the focused field (`patchAround`): it and its ancestors stay, everything else is replaced, and the scroll is compensated. Applies to soil and gas. Forms, Excel and email were compared byte for byte with the deployed version: identical.
+- **Storage full:** a photographed certificate page is about 0.5 million characters (the 18.11 estimate of 130 KB per page was measured on a synthetic image and was wrong), against about 5 MB for all of `localStorage`. The report did not come with access to the iPad, so this is the probable cause, not a confirmed one. Certificate pages moved to IndexedDB, with a verified one-time migration.
+- **No silent loss:** with storage full, leaving the record, starting a new one, or refreshing for a new version used to discard unsaved changes while saying the record was saved. Now the app stays in the record and says so.
+- **Deleting records from the iPad** (Danny): the field documents are kept in the client folder in the cloud; the iPad copy is for answering clients in the field. A sampler can delete records one by one, a month and a half (45 days) after the work. At 80% of the storage the app asks to delete old records down to about 50%.
+  - Engineering choices: age counts from the later of the record date and the last edit, so a mistyped date (Kfar Hess, 18.08) does not make a fresh record deletable; the open record and records younger than 45 days are never offered, also in the 80% prompt; unlocked records are offered and marked. The prompt lists the records (oldest first, each can be unticked), appears on opening, on switching records and when a save fails, and after "לא עכשיו" not again until the next day.
+  - **The change log survives**: in soil it is only in the Excel, which is not ticked by default, so it may not be in the client folder. `deleteDoc` stores it in IndexedDB and reads it back first; if that fails nothing is deleted. Exported from the records tab.
+  - Closing the app no longer counts as an edit (`persistNow`), so reading an old record does not make it new.
+- **Excel ticked by default in the soil email** (Danny): the change log is only in the Excel, so it reaches the client folder.
+- **ITM parameters corrected.** The app used an outdated WGS84/Israel 1993 parameter set taken from `templates/itm.py`; the published set for EPSG:2039 (epsg.io: 23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262) differs by 1.2–1.3 m in the Tel Aviv–Hadera area, up to 2.6 m in Eilat. Points measured 19–23.11.2026 carry that difference.
+
 ## 19.11.2026 — Coordinates (GPS)
 
 - **Requirement:** MoEP soil-survey guidelines (21.04.2016, v1) section 3.1.5: GPS marking "up to 2.5 m" accuracy. The soil-gas guidelines (v2, 2021) only ask for coordinates in the results table.
 - **Per-device switch, off by default** (Danny): a browser cannot tell a cellular iPad (GPS) from a Wi-Fi-only one (network location). The switch lives in localStorage (`vasa-gps`), not in the record. Off = no measure button at all; the coordinates card still shows when a record already has coordinates.
-- **Measurement:** `watchPosition` with high accuracy for up to 30 s; the reading with the best reported accuracy is kept. Converted to ITM (EPSG:2039) in the app — the same Helmert + TM as `templates/itm.py`, checked to the millimetre. Stored as whole metres, plus accuracy, time and source (GPS / manual). Warning above 2.5 m.
+- **Measurement:** `watchPosition` with high accuracy for up to 30 s; the reading with the best reported accuracy is kept. Converted to ITM (EPSG:2039) in the app — Helmert + TM; parameters corrected 23.11.2026, see above. Stored as whole metres, plus accuracy, time and source (GPS / manual). Warning above 2.5 m.
 - **Where:** soil — one point per borehole (`coords`, keyed by borehole number). Gas — per well (`gx/gy/gacc/gt/gsrc/gday`), on both the installation and sampling days (Danny); measured at installation → shown on sampling, no re-measure. Coordinates travel in the installation data file; in an imported record those measured at installation are locked; a point measured on sampling day is not overwritten by a later installation file without coordinates.
 - **Output** (Danny): Excel only. Soil — the field-log sheet. Gas — by the day the point was measured (`gday`): installation → the installation sheet; sampling day (including sampling-only records) → the main custody sheet (not the split sheet). Columns are headed "רשת ישראל החדשה (ITM)" and are added to a sheet only when it has coordinates, so existing files are unchanged. Never on the forms (no field for it; forms are fixed).
 - **Change log** (Danny): GPS measurements are not logged at all; a manual edit of an existing value is.
