@@ -303,10 +303,11 @@ function ddmmyy(iso){
 
 function blankSample(boring){
   return {id:crypto.randomUUID(), boring:boring||"", depth:"", time:"", name:"", nameAuto:true,
-    dayLetter:"", soil:[], color:[], odour:"", moist:"", pid:"", pid20:"", note:"",
-    toCoc:false, tool:"", packs:"", stype:"חטף", tests:[], extra:[], cocNote:"", qc:"",
-    toSplit:false, sp:{tool:"", packs:"", stype:"חטף", tests:[], extra:[], note:""},
-    auto:["stype","sp.stype"]};
+    dayLetter:"", soil:[], color:[], odour:"לא", moist:"", pid:"", pid20:"", note:"",
+    toCoc:false, tool:"צנצנת", packs:"1", stype:"חטף", tests:[], extra:[], cocNote:"", qc:"",
+    toSplit:false, sp:{tool:"צנצנת", packs:"1", stype:"חטף", tests:[], extra:[], note:""},
+    /* ברירות מחדל (דני, 24.11.2026): ריח — לא; כלי דיגום — צנצנת; מספר אריזות — 1 */
+    auto:["odour","tool","packs","stype","sp.tool","sp.packs","sp.stype"]};
 }
 
 /* שורה שקיימת רק בשרשרת המשמורת (או בפיצול), ולא ביומן השדה:
@@ -314,7 +315,7 @@ function blankSample(boring){
    after — מזהה השורה שהחזרה מוצגת מתחתיה; "" — בסוף הטבלה */
 function blankExtra(){
   return {id:crypto.randomUUID(), dup:false, after:"", name:"", depth:"", time:"", pid:"", dayLetter:"",
-    tool:"", packs:"", stype:"חטף", tests:[], note:"", auto:["stype"]};
+    tool:"צנצנת", packs:"1", stype:"חטף", tests:[], note:"", auto:["tool","packs","stype"]};
 }
 
 const newId = () => `day-${todayISO()}-${crypto.randomUUID().slice(0,8)}`;
@@ -368,7 +369,8 @@ function blankDay(id){
     },
     samples:[blankSample()], deviations:[],
     cocExtra:[], splitExtra:[],
-    storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:""},
+    /* tempOk — ברירת מחדל "תקין" (דני, 24.11.2026); auto כמו בדגימה: הבחירה הראשונה בו אינה שינוי */
+    storage:{place:"", keeper:"", fromD:"", fromT:"", toD:"", toT:"", tempOk:"תקין", auto:["tempOk"]},
     /* הפיצולים נמסרים למעבדה אחרת — מסירה וקבלה נפרדות, וחתימות bySplit / labSplit */
     handover:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
     handoverSplit:{byName:"", byDate:"", byTime:"", labName:"", labDate:"", labTime:""},
@@ -410,6 +412,11 @@ function normalize(d){
     sigs:{...b.sigs, ...(d.sigs||{})}};
   /* רשומות מלפני גז הקרקע הן רשומות קרקע */
   n.kind = d.kind==="gas" ? "gas" : "soil";
+  /* רשומה מלפני ברירת המחדל של הטמפרטורה — נשארת כמו שהייתה */
+  if(!Array.isArray((d.storage||{}).auto)){
+    n.storage.auto=[];
+    if(!d.storage || !("tempOk" in d.storage)) n.storage.tempOk="";
+  }
   n.canCert = Array.isArray(d.canCert) ? d.canCert : [];
   n.certN = n.canCert.length || Number(d.certN) || 0;
   n.coords = d.coords && typeof d.coords==="object" && !Array.isArray(d.coords) ? d.coords : {};
@@ -539,7 +546,11 @@ function logChange(label, from, to, key){
 }
 
 function setHead(k,v,label){ logChange(label,S.head[k],v,"head."+k); S.head[k]=v; save(); }
-function setSub(obj,k,v,label,key){ logChange(label,obj[k],v,key||label); obj[k]=v; save(); }
+function setSub(obj,k,v,label,key){
+  if(Array.isArray(obj.auto) && obj.auto.includes(k)) obj.auto=obj.auto.filter(x=>x!==k);
+  else logChange(label,obj[k],v,key||label);
+  obj[k]=v; save();
+}
 function setSample(sm,k,v,label){
   /* ערך שהועתק לשורה חדשה אינו הזנה של הדוגם — הבחירה הראשונה בו אינה שינוי */
   if(sm.auto.includes(k)) sm.auto=sm.auto.filter(x=>x!==k);
@@ -2002,8 +2013,10 @@ function askYes(title,text,yes,onYes,danger){
   document.body.append(m);
 }
 /* שורה ריקה: אין בה שום ערך שהדוגם הזין. השעה ממולאת מעצמה בהוספה, וסוג הדגימה הוא ברירת מחדל */
+const ROW_DEFAULT = {tool:"צנצנת", packs:"1"};
 const rowHasData = e => e.tests.length>0 ||
-  ["name","depth","pid","tool","packs","note"].some(k=>String(e[k]??"").trim()!=="");
+  ["name","depth","pid","tool","packs","note"].some(k=>String(e[k]??"").trim()!=="" &&
+    !(e.auto.includes(k) && e[k]===ROW_DEFAULT[k]));
 function deleteRow(r,isSplit){
   const data=rowHasData(r.x);
   askYes("למחוק את השורה?", `השורה ${r.name||"ללא שם"} תימחק משרשרת המשמורת.`+

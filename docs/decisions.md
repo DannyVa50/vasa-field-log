@@ -2,6 +2,12 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 24.11.2026 — Soil defaults: odour, sampling tool, packs, storage temperature
+
+- **Defaults** (Danny): field log odour "לא" (Danny wrote "אין"; the list is "לא / כן / חזק" and was not changed); chain of custody and split custody: sampling tool "צנצנת", packs "1"; storage temperature 4±2°C "תקין".
+  - Engineering: defaults are in `auto`, like `stype`, so changing one the first time is not logged; after that every change is. They apply to new samples and new added custody rows; existing records keep their values. A duplicate still copies the source row's tool and packs.
+  - The storage temperature is one field for both custody forms, so "תקין" now prints on form 33.1 and on the split form even when the storage section is otherwise empty.
+
 ## 23.11.2026 — Soil gas: purge rate, purge volumes per well, 1.4 L canister
 
 - **Purge rate 100–200 ml/min** (Danny), replacing 150±10 of 16.11; no other message about the rate. WI 40002 clause 9.8.4.3 still says 150±10.

@@ -56,17 +56,19 @@ A sample (`blankSample()`):
 
 ```js
 { id /* uuid */, boring, depth, time, name, nameAuto: true, dayLetter,
-  soil: [], color: [], odour, moist, pid, pid20, note,
-  toCoc: false, tool, packs, stype: "חטף", tests: [], extra: [], cocNote, qc,
-  toSplit: false, sp: { tool, packs, stype: "חטף", tests: [], extra: [], note },
-  auto: ["stype", "sp.stype"] }   // keys whose current value was copied in, not typed (see change log)
+  soil: [], color: [], odour: "לא", moist, pid, pid20, note,
+  toCoc: false, tool: "צנצנת", packs: "1", stype: "חטף", tests: [], extra: [], cocNote, qc,
+  toSplit: false, sp: { tool: "צנצנת", packs: "1", stype: "חטף", tests: [], extra: [], note },
+  auto: ["odour", "tool", "packs", "stype", "sp.tool", "sp.packs", "sp.stype"] }
+  // auto: keys whose current value was copied in or is a default, not typed (see change log)
 ```
 
 A custody-only row (`blankExtra()`):
 
 ```js
 { id /* uuid */, dup: false /* true = duplicate (חזרה) */, after: "" /* id of the row a duplicate sits under */,
-  name, depth, time, pid, dayLetter, tool, packs, stype: "חטף", tests: [], note, auto: ["stype"] }
+  name, depth, time, pid, dayLetter, tool: "צנצנת", packs: "1", stype: "חטף", tests: [], note,
+  auto: ["tool", "packs", "stype"] }
 ```
 
 **Custody rows.** `custodyRows(isSplit)` is the one list of form 33.1 rows, in print order, used by the custody tabs, the PDF, the Excel file, the email counts and the tab counts:
@@ -84,6 +86,8 @@ Each item is `{id, src, x, bag, name, depth, time, pid, dayLetter, note, dup}`. 
 - It merges `d` over `blankDay()`, including the nested `head`, `storage`, `handover`, `handoverSplit` and `sigs`.
 - It pads `extraTests` to 5 and maps old analysis names through `TEST_OLD`.
 - It fills `cocExtra` / `splitExtra` (empty in records from before 21.10.2026) and merges each row over `blankExtra()`.
+- `storage` defaults to `tempOk: "תקין", auto: ["tempOk"]`; `setSub` honours `auto` the same way `setSample` does. A stored record whose `storage` has no `auto` (from before 24.11.2026) gets `auto: []` and, if it never had `tempOk`, `tempOk: ""`, so old records print and log exactly as before.
+- `rowHasData` ignores `tool` / `packs` while they are still the untouched defaults (`ROW_DEFAULT`), so deleting an otherwise empty added row stays unlogged.
 - It moves a free-text lab name that isn't in `LABS` (from versions before the lab list) to `"אחר"` + `labOther` / `labSplitOther`, so the printed name doesn't change.
 
 Every record loaded from storage goes through it, so **new fields must have defaults in `blankDay()` / `blankSample()`**.
@@ -189,7 +193,7 @@ The app keeps a change log because the records are accredited quality records. T
   3. **Analyses** (keys ending `.tests`): adding is not a change; removing an analysis that was already chosen is logged.
   4. **Deleting an empty custody row** (`rowHasData` false: no name, depth, PID, tool, packs, note or analyses) is not logged — `deleteRow` skips `logChange`.
   5. Signatures, handover fields and the sketch are always logged (they go through the normal "existing value changed" path). **Once any lab has signed** (`labSignedAny()`), rules 1 and 3 no longer apply: every tick and every added analysis is logged.
-- **Copied values are not changes.** When a new log row inherits the borehole, time, soil or colour, those keys go into `sample.auto`. The first edit of such a key removes it from `auto` without logging.
+- **Copied values and defaults are not changes.** When a new log row inherits the borehole, time, soil or colour, those keys go into `sample.auto`; so do the defaults (odour, tool, packs, type) and `storage.tempOk`. The first edit of such a key removes it from `auto` without logging.
 - **Pending changes are flushed** (`flushChanges`) before switching records and on `pagehide`, so a change lands in the right record.
 - Unticking, signatures ("signed" / "cleared"), the sketch, deleting rows with data, locking and reopening are all logged.
 - `actor(key)`: in a soil record, `head.s1`. In a gas record, keys `gas.inst.*` and `sig.gi` → the installation sampler; anything else → the sampling sampler, or the installation sampler until one is chosen. Lock / reopen entries use `actor()`.
