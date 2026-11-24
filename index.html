@@ -1370,6 +1370,7 @@ function viewInst(){
   if(issues.length) v.append(el("div",{class:"card"},...issues.map(([n,bad])=>
     el("div",{class:"note warn",style:"margin-bottom:8px"},el("b",{},`${n}: `),bad.join(" · ")))));
   const cc=gasCoordsCard("inst"); if(cc) v.append(cc);
+  if(!S.gas.imported) v.append(wellPhotosCard());
 
   v.append(instRO(()=>el("div",{class:"card"},
     el("h2",{},"הערות"),
@@ -1445,6 +1446,7 @@ function viewSamp(){
       g.wells.length?el("button",{class:"btn ghost",disabled:RO(),onclick:()=>dropLastWell("samp")},"מחק אחרונה"):null,
       el("span",{class:"spacer"}),el("span",{class:"pill"},`${g.wells.length} בארות`)) : null));
   const cc=gasCoordsCard("samp"); if(cc) v.append(cc);
+  if(S.gas.mode==="manual" || S.gas.imported) v.append(wellPhotosCard());
 
   v.append(el("div",{class:"card"},
     el("h2",{},"בלאנקים"),
@@ -1723,7 +1725,8 @@ async function certPdf(){
    כל צילום מוקטן ל-100–300KB, ועל גביו נכתבים שם האתר, הקידוח (בצילום קידוח) ותאריך הצילום.
    הצילומים מצורפים למייל כקובצי JPG. שם הקובץ: האתר והתאריך (ובצילום קידוח — גם הקידוח).
    התמונות נשמרות ב-IndexedDB ("photo"), לא ברשומה: צילום אחד הוא כ-200KB, וכל localStorage באייפד כ-5MB.
-   ברשומה נשמר רק התיאור: {id, kind:"site"|"bore", b, d (תאריך הצילום), t (שעה)}. הצילומים לא עוברים למאגר המשותף */
+   ברשומה נשמר רק התיאור: {id, kind:"site"|"bore"|"well", b, d (תאריך הצילום), t (שעה)}. הצילומים לא עוברים למאגר המשותף.
+   גז קרקע (דני, 24.11.2026): צילום אחד לכל באר. b — מזהה הבאר (לא השם), כך ששינוי שם הבאר לא מנתק את הצילום */
 const PHOTO_PX=1600, PHOTO_MIN=100*1024, PHOTO_MAX=300*1024;
 const photoUrl=new Map();            /* id → כתובת לתצוגה (object URL) */
 const photoMiss=new Set();           /* צילומים שלא נמצאו באחסון המכשיר */
@@ -1768,13 +1771,16 @@ async function makePhoto(file, lines){
   return blob;
 }
 const siteOf=()=>(S.head.site||"").trim();
-const photoLines=p=>[siteOf(), ...(p.kind==="bore"?[`קידוח ${p.b}`]:[]), fmtFull(p.d)];
+const wellName=id=>{ const i=S.gas.wells.findIndex(w=>w.id===id); return i<0 ? "באר" : (S.gas.wells[i].name||"").trim()||`באר ${i+1}`; };
+const ONE_PER={bore:true, well:true};
+const photoLines=p=>[siteOf(), ...(p.kind==="bore"?[`קידוח ${p.b}`]:p.kind==="well"?[wellName(p.b)]:[]), fmtFull(p.d)];
 /* שמות הקבצים: "<אתר> <ddmmyy>", בצילום קידוח "<אתר> קידוח <מס׳> <ddmmyy>". צילומים באותו שם ממוספרים (2), (3)… */
 function photoNames(){
   const clean=s=>String(s).trim().replace(/[\\/:*?"<>|]/g,"-");
   const seen=new Map(), out=new Map();
   for(const p of S.photos){
-    const base=clean(p.kind==="bore" ? `${siteOf()||"אתר"} קידוח ${p.b} ${ddmmyy(p.d)}` : `${siteOf()||"אתר"} ${ddmmyy(p.d)}`);
+    const base=clean(p.kind==="bore" ? `${siteOf()||"אתר"} קידוח ${p.b} ${ddmmyy(p.d)}`
+      : p.kind==="well" ? `${siteOf()||"אתר"} ${wellName(p.b)} ${ddmmyy(p.d)}` : `${siteOf()||"אתר"} ${ddmmyy(p.d)}`);
     const n=(seen.get(base)||0)+1; seen.set(base,n);
     out.set(p.id, n>1?`${base} (${n})`:base);
   }
@@ -1784,7 +1790,7 @@ function photoNames(){
 async function addPhoto(file, kind, b){
   if(!file || RO()) return;
   if(!siteOf()){ alert("יש למלא שם אתר לפני הצילום: הוא נכתב על הצילום ובשם הקובץ."); return; }
-  const id=S.id, p={id:crypto.randomUUID(), kind, b:kind==="bore"?b:"", d:todayISO(), t:nowHM()};
+  const id=S.id, p={id:crypto.randomUUID(), kind, b:ONE_PER[kind]?b:"", d:todayISO(), t:nowHM()};
   try{
     const blob=await makePhoto(file, photoLines(p));
     const buf=await blob.arrayBuffer();
@@ -1795,7 +1801,7 @@ async function addPhoto(file, kind, b){
     });
     if(S.id!==id){ certDo(()=>certTx("readwrite",s=>s.delete(p.id),"photo")).catch(()=>{}); return; }
     photoUrl.set(p.id, URL.createObjectURL(blob));
-    const old=kind==="bore" ? S.photos.find(x=>x.kind==="bore" && x.b===b) : null;
+    const old=ONE_PER[kind] ? S.photos.find(x=>x.kind===kind && x.b===b) : null;
     if(old){
       /* צילום חוזר אינו נרשם בתיעוד (דני, 24.11.2026) */
       S.photos=S.photos.filter(x=>x!==old); dropPhoto(old.id);
@@ -1810,7 +1816,7 @@ function dropPhoto(pid){
 }
 function removePhoto(p, name){
   askYes("להסיר את הצילום?", `${showName(name)}.jpg יוסר מהרשומה. ההסרה נרשמת בתיעוד השינויים.`, "כן, להסיר", ()=>{
-    logChange(p.kind==="bore"?`צילום קידוח ${p.b}`:"צילום האתר", `${showName(name)}.jpg`, "הוסר", `photo.${p.kind}.${p.id}`);
+    logChange(p.kind==="bore"?`צילום קידוח ${p.b}`:p.kind==="well"?`צילום באר ${wellName(p.b)}`:"צילום האתר", `${showName(name)}.jpg`, "הוסר", `photo.${p.kind}.${p.id}`);
     S.photos=S.photos.filter(x=>x!==p); dropPhoto(p.id); save();
   }, true);
 }
@@ -1874,6 +1880,24 @@ function borePhotosCard(){
             el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
             p?el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"):null, cam, lib));
       })):el("div",{class:"empty"},"אין עדיין קידוחים ביומן."));
+}
+/* גז קרקע: צילום אחד לכל באר — בלשונית ההתקנה, ובדיגום בלבד או ברשומה מיובאת — בלשונית הדיגום */
+function wellPhotosCard(){
+  const wells=S.gas.wells, names=photoNames();
+  return el("div",{class:"card"},
+    el("h2",{},"צילומי הבארות"),
+    el("div",{class:"sub"},"צילום אחד לכל באר. על הצילום נכתבים שם האתר, שם הבאר והתאריך. הצילומים מצורפים למייל כקובצי תמונה"),
+    wells.length?el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"},
+      ...wells.map(w=>{
+        const p=S.photos.find(x=>x.kind==="well" && x.b===w.id), {cam,lib}=photoInputs(f=>addPhoto(f,"well",w.id));
+        return el("div",{"data-id":"well-"+w.id},
+          el("div",{class:"bar",style:"margin:0 0 6px"},el("b",{},wellName(w.id))),
+          p?photoThumb(p,names.get(p.id)):el("div",{class:"empty",style:"height:150px;display:flex;align-items:center;justify-content:center;margin:0"},"אין צילום"),
+          el("div",{class:"bar",style:"margin-top:6px"},
+            el("button",{class:p?"btn ghost sm":"btn sm",type:"button",disabled:RO(),onclick:()=>cam.click()},p?"צילום חוזר":"צילום"),
+            el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
+            p?el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"):null, cam, lib));
+      })):el("div",{class:"empty"},"אין עדיין בארות."));
 }
 async function photoFiles(){
   const names=photoNames(), out=[];
