@@ -2,6 +2,11 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 24.11.2026 — Soil coordinates: once per borehole, Excel only
+
+- **Once per borehole** (Danny): in the Excel field-log sheet the coordinates are printed only on the first row of each borehole; the borehole's other rows leave the coordinate cells empty. Before, every row repeated them.
+- **Still Excel only** (Danny, reconfirmed): not on form 57 or any other form.
+
 ## 24.11.2026 — Samplers delete records at any time
 
 - **Delete any record at any time** (Danny), replacing the 45-day limit of 23.11 for the "מחיקה" button in the records tab. Still one by one, never the open record, only records stored on this device, with the same confirmation ("make sure the documents are in the client folder in the cloud", cannot be undone) and the change log kept in IndexedDB `gone`.

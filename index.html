@@ -3034,9 +3034,11 @@ function workbookSheets(){
   const sheets=[{name:"פרטי יום הדיגום",widths:[28,70],rows:details,table:false,
     styles:(r,c)=>({sec:XS.label, tot:XS.total, an:XS.cell}[kinds[r]] ?? (c===0?XS.label:XS.cell))}];
 
-  /* נ"צ הקידוח — רק ביומן השדה (דני, 19.11.2026), ורק כשנרשם נ"צ כלשהו, כך שקובץ בלי מדידות לא משתנה */
+  /* נ"צ הקידוח — רק ביומן השדה (דני, 19.11.2026), ורק כשנרשם נ"צ כלשהו, כך שקובץ בלי מדידות לא משתנה.
+     פעם אחת לכל קידוח — בשורה הראשונה שלו (דני, 24.11.2026) */
   const logRows=S.samples.filter(s=>s.boring||s.name||s.depth);
-  const cOf=s=>S.coords[String(s.boring||"").trim()]||{}, withC=logRows.some(s=>cOf(s).x||cOf(s).y);
+  const bOf=s=>String(s.boring||"").trim(), withC=logRows.some(s=>(S.coords[bOf(s)]||{}).x||(S.coords[bOf(s)]||{}).y);
+  const cSeen=new Set(), cOf=s=>{ const b=bOf(s); if(!b || cSeen.has(b)) return {}; cSeen.add(b); return S.coords[b]||{}; };
   sheets.push(tableSheet("יומן שדה",
     ["מס׳ קידוח","מס׳ דגימה","עומק (מטר)","שעה","סוג קרקע (חתך ליתולוגי)","צבע","ריח","לחות","ערך PID (ppm)","PID 20%","הערות",
      ...(withC?COORD_HEAD:[])],
