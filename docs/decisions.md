@@ -2,6 +2,11 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 24.11.2026 — Samplers delete records at any time
+
+- **Delete any record at any time** (Danny), replacing the 45-day limit of 23.11 for the "מחיקה" button in the records tab. Still one by one, never the open record, only records stored on this device, with the same confirmation ("make sure the documents are in the client folder in the cloud", cannot be undone) and the change log kept in IndexedDB `gone`.
+  - Engineering: the 80% storage prompt still offers only records older than 45 days (`canOffer`); that was not part of the request.
+
 ## 24.11.2026 — Soil defaults: odour, sampling tool, packs, storage temperature
 
 - **Defaults** (Danny): field log odour "לא" (Danny wrote "אין"; the list is "לא / כן / חזק" and was not changed); chain of custody and split custody: sampling tool "צנצנת", packs "1"; storage temperature 4±2°C "תקין".
