@@ -379,6 +379,8 @@ function blankDay(id){
     sketch:"", sketchPhoto:"", changes:[],
     /* גז קרקע: עמודי תעודת הניקיון של הקניסטרים, מצולמים (JPEG data URL). נשמרים מחוץ למסמך היום, כמו צילום השרטוט */
     canCert:[], certN:0,
+    /* צילומי שטח — רק התיאור; התמונות ב-IndexedDB "photo" (ראה צילומי שטח) */
+    photos:[],
     /* קרקע: נ"צ לכל קידוח — {מס' קידוח: {x, y, acc, t, src}}. נכנס לאקסל (יומן שדה) בלבד, לא לטפסים */
     coords:{},
     gas:blankGas()
@@ -418,6 +420,7 @@ function normalize(d){
     if(!d.storage || !("tempOk" in d.storage)) n.storage.tempOk="";
   }
   n.canCert = Array.isArray(d.canCert) ? d.canCert : [];
+  n.photos = Array.isArray(d.photos) ? d.photos.filter(p=>p && p.id) : [];
   n.certN = n.canCert.length || Number(d.certN) || 0;
   n.coords = d.coords && typeof d.coords==="object" && !Array.isArray(d.coords) ? d.coords : {};
   const g=d.gas||{};
@@ -615,8 +618,8 @@ let certDb=null, certFail="", certJob=Promise.resolve();
 const certDo=f=>certJob=certJob.then(f,f);
 function certOpen(){
   if(!certDb) certDb=new Promise((res,rej)=>{
-    const q=indexedDB.open("vasa-files",2);
-    q.onupgradeneeded=()=>{ for(const n of ["cert","gone"]) if(!q.result.objectStoreNames.contains(n)) q.result.createObjectStore(n); };
+    const q=indexedDB.open("vasa-files",3);
+    q.onupgradeneeded=()=>{ for(const n of ["cert","gone","photo"]) if(!q.result.objectStoreNames.contains(n)) q.result.createObjectStore(n); };
     q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); q.onblocked=()=>rej(new Error("blocked"));
   }).catch(e=>{ certDb=null; throw e; });
   return certDb;
@@ -720,6 +723,7 @@ const deleteDoc=id=>certDo(async()=>{
   }catch(e){}
   certMoved.delete(id);
   try{ await certTx("readwrite",s=>s.delete(id)); }catch(e){}
+  for(const p of Array.isArray(d.photos)?d.photos:[]) try{ await certTx("readwrite",s=>s.delete(p.id),"photo"); }catch(e){}
   return true;
 });
 function askDelete(e){
@@ -1186,6 +1190,7 @@ function viewDay(){
       el("b",{},"סמליל הרשות יורד מהמשמורת. "),"לפי הוראת עבודה 30001 סעיף 7ב.") : null));
 
   v.append(sketchCard());
+  v.append(sitePhotosCard());
   return v;
 }
 
@@ -1240,6 +1245,7 @@ function viewGasHead(){
         toggle(h.planShown,x=>setHead("planShown",x,"תוכנית מאושרת — הוצגה למעבדה"),"תוכנית מאושרת ע״י המשרד — הוצגה למעבדה"))),
     !h.accredited ? el("div",{class:"note warn",style:"margin-top:14px"},
       el("b",{},"סמליל הרשות יורד מהטפסים. "),"לפי הוראת עבודה 30001 סעיף 7ב.") : null));
+  v.append(sitePhotosCard());
   return v;
 }
 
@@ -1712,6 +1718,173 @@ async function certPdf(){
   return pdfFromJpegs(out);
 }
 
+/* ============ צילומי שטח — דני (24.11.2026) ============
+   צילומי האתר (כמה שרוצים, קרקע וגז) בסוף לשונית יום הדיגום / פרטי הסקר, וצילום אחד לכל קידוח ביומן השדה.
+   כל צילום מוקטן ל-100–300KB, ועל גביו נכתבים שם האתר, הקידוח (בצילום קידוח) ותאריך הצילום.
+   הצילומים מצורפים למייל כקובצי JPG. שם הקובץ: האתר והתאריך (ובצילום קידוח — גם הקידוח).
+   התמונות נשמרות ב-IndexedDB ("photo"), לא ברשומה: צילום אחד הוא כ-200KB, וכל localStorage באייפד כ-5MB.
+   ברשומה נשמר רק התיאור: {id, kind:"site"|"bore", b, d (תאריך הצילום), t (שעה)}. הצילומים לא עוברים למאגר המשותף */
+const PHOTO_PX=1600, PHOTO_MIN=100*1024, PHOTO_MAX=300*1024;
+const photoUrl=new Map();            /* id → כתובת לתצוגה (object URL) */
+const photoMiss=new Set();           /* צילומים שלא נמצאו באחסון המכשיר */
+const photoBlob=async id=>{
+  const r=await certTx("readonly",s=>s.get(id),"photo");
+  return r && r.buf ? new Blob([r.buf],{type:r.type||"image/jpeg"}) : null;
+};
+const toBlob=(cv,q)=>new Promise(res=>cv.toBlob(b=>res(b),"image/jpeg",q));
+function readImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("לא ניתן לקרוא את התמונה")); };
+    im.onload=()=>{ URL.revokeObjectURL(url); res(im); };
+    im.src=url;
+  });
+}
+/* הכיתוב בפינה הימנית התחתונה: רקע כהה שקוף למחצה וטקסט לבן, בגודל יחסי לתמונה */
+function stampPhoto(cv, lines){
+  const g=cv.getContext("2d"), fs=Math.max(16,Math.round(Math.min(cv.width,cv.height)*0.035)), pad=Math.round(fs*0.5), lh=Math.round(fs*1.25);
+  g.font=`bold ${fs}px ${PFONT}`; g.direction="rtl"; g.textAlign="right"; g.textBaseline="top";
+  const w=Math.min(cv.width-2*pad, Math.max(...lines.map(l=>g.measureText(l).width))+2*pad), h=lines.length*lh+2*pad-(lh-fs);
+  const x1=cv.width-pad, y0=cv.height-pad-h;
+  g.fillStyle="rgba(0,0,0,.55)"; g.fillRect(x1-w,y0,w,h);
+  g.fillStyle="#fff";
+  lines.forEach((l,i)=>g.fillText(l,x1-pad,y0+pad+i*lh,w-2*pad));
+}
+/* מקטין, כותב על התמונה, ומכווץ ל-100–300KB */
+async function makePhoto(file, lines){
+  const im=await readImage(file);
+  let sc=Math.min(1,PHOTO_PX/Math.max(im.width,im.height)), blob=null;
+  for(let round=0; round<6; round++){
+    const cv=document.createElement("canvas"); cv.width=Math.round(im.width*sc); cv.height=Math.round(im.height*sc);
+    cv.getContext("2d").drawImage(im,0,0,cv.width,cv.height);
+    stampPhoto(cv,lines);
+    let q=.82; blob=await toBlob(cv,q);
+    while(blob && blob.size>PHOTO_MAX && q>.45){ q-=.08; blob=await toBlob(cv,q); }
+    while(blob && blob.size<PHOTO_MIN && q<.95){ const b=await toBlob(cv,Math.min(.95,q+=.05)); if(!b || b.size>PHOTO_MAX) break; blob=b; }
+    if(!blob) throw new Error("יצירת התמונה נכשלה");
+    if(blob.size<=PHOTO_MAX) break;
+    sc*=.8;
+  }
+  return blob;
+}
+const siteOf=()=>(S.head.site||"").trim();
+const photoLines=p=>[siteOf(), ...(p.kind==="bore"?[`קידוח ${p.b}`]:[]), fmtFull(p.d)];
+/* שמות הקבצים: "<אתר> <ddmmyy>", בצילום קידוח "<אתר> קידוח <מס׳> <ddmmyy>". צילומים באותו שם ממוספרים (2), (3)… */
+function photoNames(){
+  const clean=s=>String(s).trim().replace(/[\\/:*?"<>|]/g,"-");
+  const seen=new Map(), out=new Map();
+  for(const p of S.photos){
+    const base=clean(p.kind==="bore" ? `${siteOf()||"אתר"} קידוח ${p.b} ${ddmmyy(p.d)}` : `${siteOf()||"אתר"} ${ddmmyy(p.d)}`);
+    const n=(seen.get(base)||0)+1; seen.set(base,n);
+    out.set(p.id, n>1?`${base} (${n})`:base);
+  }
+  return out;
+}
+/* צילום חדש. בצילום קידוח — מחליף את הקודם של אותו קידוח (ההחלפה נרשמת בתיעוד) */
+async function addPhoto(file, kind, b){
+  if(!file || RO()) return;
+  if(!siteOf()){ alert("יש למלא שם אתר לפני הצילום: הוא נכתב על הצילום ובשם הקובץ."); return; }
+  const id=S.id, p={id:crypto.randomUUID(), kind, b:kind==="bore"?b:"", d:todayISO(), t:nowHM()};
+  try{
+    const blob=await makePhoto(file, photoLines(p));
+    const buf=await blob.arrayBuffer();
+    await certDo(async()=>{
+      await certTx("readwrite",s=>s.put({type:blob.type, buf},p.id),"photo");
+      const back=await certTx("readonly",s=>s.get(p.id),"photo");
+      if(!back || !back.buf || back.buf.byteLength!==buf.byteLength) throw new Error("הבדיקה אחרי השמירה נכשלה");
+    });
+    if(S.id!==id){ certDo(()=>certTx("readwrite",s=>s.delete(p.id),"photo")).catch(()=>{}); return; }
+    photoUrl.set(p.id, URL.createObjectURL(blob));
+    const old=kind==="bore" ? S.photos.find(x=>x.kind==="bore" && x.b===b) : null;
+    if(old){
+      /* צילום חוזר אינו נרשם בתיעוד (דני, 24.11.2026) */
+      S.photos=S.photos.filter(x=>x!==old); dropPhoto(old.id);
+    }
+    S.photos=[...S.photos, p];
+    save();
+  }catch(e){ alert("הצילום לא נשמר: "+((e&&e.message)||e)); }
+}
+function dropPhoto(pid){
+  const u=photoUrl.get(pid); if(u){ URL.revokeObjectURL(u); photoUrl.delete(pid); }
+  certDo(()=>certTx("readwrite",s=>s.delete(pid),"photo")).catch(()=>{});
+}
+function removePhoto(p, name){
+  askYes("להסיר את הצילום?", `${showName(name)}.jpg יוסר מהרשומה. ההסרה נרשמת בתיעוד השינויים.`, "כן, להסיר", ()=>{
+    logChange(p.kind==="bore"?`צילום קידוח ${p.b}`:"צילום האתר", `${showName(name)}.jpg`, "הוסר", `photo.${p.kind}.${p.id}`);
+    S.photos=S.photos.filter(x=>x!==p); dropPhoto(p.id); save();
+  }, true);
+}
+/* טעינת התמונות של הרשומה הפתוחה לתצוגה */
+const loadPhotos=()=>certDo(async()=>{
+  const id=S.id; let changed=false;
+  for(const p of S.photos){
+    if(photoUrl.has(p.id) || photoMiss.has(p.id)) continue;
+    try{ const b=await photoBlob(p.id); if(S.id!==id) return; if(b) photoUrl.set(p.id,URL.createObjectURL(b)); else photoMiss.add(p.id); }
+    catch(e){ photoMiss.add(p.id); }
+    changed=true;
+  }
+  if(changed && S.id===id) renderSoon();
+});
+function photoInputs(onFile){
+  const mk=capture=>{
+    const i=el("input",{type:"file",accept:"image/*",hidden:true,...(capture?{capture:"environment"}:{})});
+    i.addEventListener("change",()=>{ const f=i.files&&i.files[0]; i.value=""; onFile(f); });
+    return i;
+  };
+  return {cam:mk(true), lib:mk(false)};
+}
+/* תמונה ממוזערת בגובה קבוע — התמונה נטענת אחרי הבנייה, ובלי זה כל מה שמתחתיה קופץ */
+function photoThumb(p, name){
+  const u=photoUrl.get(p.id);
+  if(!u && !photoMiss.has(p.id)) loadPhotos();
+  return u ? el("img",{class:"shot",src:u,alt:showName(name),style:"width:100%;height:150px;object-fit:cover;margin:0"})
+    : el("div",{class:photoMiss.has(p.id)?"note warn":"sub",style:"height:150px;display:flex;align-items:center;justify-content:center;margin:0"},
+        photoMiss.has(p.id)?"הצילום לא נמצא באחסון המכשיר":"טוען…");
+}
+function sitePhotosCard(){
+  const list=S.photos.filter(p=>p.kind==="site"), names=photoNames();
+  const {cam,lib}=photoInputs(f=>addPhoto(f,"site"));
+  return el("div",{class:"card"},
+    el("h2",{},"צילומי האתר"),
+    el("div",{class:"sub"},"על הצילום נכתבים שם האתר והתאריך. הצילומים מצורפים למייל כקובצי תמונה"),
+    el("div",{class:"bar",style:"margin-top:0"},
+      el("button",{class:"btn",type:"button",disabled:RO(),onclick:()=>cam.click()},list.length?"צילום נוסף":"צילום האתר"),
+      el("button",{class:"btn ghost",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
+      el("span",{class:"spacer"}), list.length?el("span",{class:"pill"},list.length===1?"צילום אחד":`${list.length} צילומים`):null, cam, lib),
+    list.length?el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px"},
+      ...list.map(p=>el("div",{},photoThumb(p,names.get(p.id)),
+        el("div",{class:"bar",style:"margin-top:6px"},el("span",{class:"hint"},p.t),el("span",{class:"spacer"}),
+          el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"))))):null);
+}
+/* קרקע: צילום אחד לכל קידוח שביומן */
+function borePhotosCard(){
+  const borings=[...new Set(S.samples.map(s=>String(s.boring||"").trim()).filter(Boolean))];
+  const names=photoNames();
+  return el("div",{class:"card"},
+    el("h2",{},"צילומי הקידוחים"),
+    el("div",{class:"sub"},"צילום אחד לכל קידוח. על הצילום נכתבים שם האתר, מס׳ הקידוח והתאריך. הצילומים מצורפים למייל כקובצי תמונה"),
+    borings.length?el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"},
+      ...borings.map(b=>{
+        const p=S.photos.find(x=>x.kind==="bore" && x.b===b), {cam,lib}=photoInputs(f=>addPhoto(f,"bore",b));
+        return el("div",{"data-id":"bore-"+b},
+          el("div",{class:"bar",style:"margin:0 0 6px"},el("b",{},`קידוח ${b}`)),
+          p?photoThumb(p,names.get(p.id)):el("div",{class:"empty",style:"height:150px;display:flex;align-items:center;justify-content:center;margin:0"},"אין צילום"),
+          el("div",{class:"bar",style:"margin-top:6px"},
+            el("button",{class:p?"btn ghost sm":"btn sm",type:"button",disabled:RO(),onclick:()=>cam.click()},p?"צילום חוזר":"צילום"),
+            el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
+            p?el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"):null, cam, lib));
+      })):el("div",{class:"empty"},"אין עדיין קידוחים ביומן."));
+}
+async function photoFiles(){
+  const names=photoNames(), out=[];
+  for(const p of S.photos){
+    const blob=await photoBlob(p.id);
+    if(!blob) throw new Error(`הצילום ${names.get(p.id)} לא נמצא באחסון המכשיר`);
+    out.push({name:names.get(p.id)+".jpg", blob});
+  }
+  return out;
+}
+
 /* ============ נ"צ — מדידת מיקום ב-GPS (דני, 19.11.2026) ============
    הנחיות סקר קרקע (21.04.2016) סעיף 3.1.5: סימון ב-GPS "ברמת דיוק של עד 2.5 מ'".
    אין דרך לדעת מהדפדפן אם באייפד יש GPS — לכן מתג לכל מכשיר (localStorage), כבוי כברירת מחדל.
@@ -1960,6 +2133,7 @@ function viewLog(){
       "שקול לשלוח ל-VOC ולדגום מטר מעל ומטר מתחת לתיחום הזיהום — סעיף 3.3. ",
       el("span",{class:"mono"},hots.map(s=>s.name||"—").join(" · ")))));
   const cc=soilCoordsCard(); if(cc) v.append(cc);
+  v.append(borePhotosCard());
 
   v.append(el("div",{class:"card"},
     el("h2",{},"סיום יום העבודה"),
@@ -3329,7 +3503,8 @@ const MAIL_KINDS=[
   {kind:"coc",   label:"שרשרת משמורת — PDF",       def:()=>custodyRows(false).length>0},
   {kind:"split", label:"משמורת פיצול — PDF",       def:()=>true, when:hasSplit},
   /* מסומן (דני, 23.11.2026): תיעוד השינויים נמצא רק באקסל, וכך הוא מגיע לתיק הלקוח */
-  {kind:"xlsx",  label:"Excel ללקוח",              def:()=>true}
+  {kind:"xlsx",  label:"Excel ללקוח",              def:()=>true},
+  {kind:"photos",   label:"צילומים — JPG", def:()=>true, when:()=>S.photos.length>0}
 ];
 /* גז קרקע — דני (18.11.2026): בסוף יום ההתקנה נשלחים רק טופס ההתקנה וקובץ הנתונים.
    בסוף יום הדיגום: טופס ההתקנה, שרשרת משמורת (ופיצול כשיש), Excel, ותעודת ניקיון כשיש.
@@ -3341,10 +3516,12 @@ const GAS_MAIL_KINDS=[
   {kind:"gcoc",     label:"טופס 59 שרשרת משמורת — PDF",               def:()=>true, when:gasSampDay},
   {kind:"gsplit",   label:"טופס 59 משמורת פיצול — PDF",               def:()=>true, when:()=>gasSampDay() && hasSplit()},
   {kind:"xlsx",     label:"Excel ללקוח",                               def:()=>true, when:gasSampDay},
-  {kind:"cert",     label:"תעודת ניקיון קניסטרים — PDF",              def:()=>true, when:()=>gasSampDay() && S.canCert.length>0}
+  {kind:"cert",     label:"תעודת ניקיון קניסטרים — PDF",              def:()=>true, when:()=>gasSampDay() && S.canCert.length>0},
+  {kind:"photos",   label:"צילומים — JPG", def:()=>true, when:()=>S.photos.length>0}
 ];
 const mailKinds = () => isGas() ? GAS_MAIL_KINDS : MAIL_KINDS;
 async function mailFile(kind){
+  if(kind==="photos") return photoFiles();
   if(kind==="instData") return {name:fileName(kind)+".json", blob:await instFileBlob()};
   const blob = kind==="xlsx" ? buildXlsx() : kind==="cert" ? await certPdf() : await buildPdf(kind);
   return {name:fileName(kind)+(kind==="xlsx"?".xlsx":".pdf"), blob};
@@ -3416,7 +3593,8 @@ function mailDialog(){
     state="busy"; draw();
     try{
       const files=[];
-      for(const o of opts) if(pick.has(o.kind)) files.push(await mailFile(o.kind));
+      /* צילומים — כמה קבצים מאפשרות אחת */
+      for(const o of opts) if(pick.has(o.kind)){ const f=await mailFile(o.kind); files.push(...(Array.isArray(f)?f:[f])); }
       ready={files, ...mailText(files.map(f=>f.name))};
       state="ready";
     }catch(e){ alert("יצירת הקבצים נכשלה: "+((e&&e.message)||e)); state="pick"; }

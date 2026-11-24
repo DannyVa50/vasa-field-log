@@ -2,6 +2,20 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 24.11.2026 — Field photos: site and borehole
+
+- **Site photos** (Danny): at the end of the day tab (soil) and the survey-details tab (soil gas), as many as wanted. Stamped with the site name and the date.
+- **Borehole photos** (Danny): one per borehole in the soil field log ("אחד לכל קידוח"). Stamped with the site name, the borehole number and the date. Danny asked for "שם דגימה" on the photo; with one photo per borehole the borehole number is what identifies it.
+- **Size 100–300 KB** (Danny): scaled to at most 1600 px on the long side, JPEG quality stepped down from 0.82 until ≤ 300 KB (smaller scale if needed), and up to 0.95 while < 100 KB. Measured on real 5–39 MB camera photos: 171–172 KB at 1600 px.
+- **File name** (Danny): "<site> <ddmmyy>.jpg"; borehole "<site> קידוח <n> <ddmmyy>.jpg"; same name again → " (2)", " (3)".
+- **Attached to the email as image files** (Danny): one option "צילומים — JPG", ticked, in soil and in both gas days.
+- Engineering choices:
+  - The date on the photo and in the file name is the day the photo was taken (in soil normally the record date).
+  - A site name is required before taking a photo, because it is burned into the image.
+  - Images live in IndexedDB store `photo` (database version 3); the record holds only `photos: [{id, kind: "site"|"bore", b, d, t}]`. Photos are not sent to the shared database. Deleting a record deletes its photos.
+  - Adding a photo is a first entry and a borehole re-shoot replaces the photo; neither is logged (re-shoot: Danny). Removing a photo is logged and confirms through the in-app dialog.
+  - A borehole photo stays with the record if the borehole is renamed in the log (it is still emailed, under the old number).
+
 ## 24.11.2026 — Soil coordinates: once per borehole, Excel only
 
 - **Once per borehole** (Danny): in the Excel field-log sheet the coordinates are printed only on the first row of each borehole; the borehole's other rows leave the coordinate cells empty. Before, every row repeated them.
