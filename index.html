@@ -670,9 +670,9 @@ const moveOldCerts=()=>certDo(async()=>{
   if(storageFull && !pristine(S)){ persistLocal(); render(); }
 });
 
-/* ---------- נפח האחסון ומחיקת רשומות (דני, 23.11.2026) ----------
-   המסמכים נשמרים בתיק הלקוח בענן. רשומה נמחקת מהאייפד רק חודש וחצי אחרי העבודה, אחת אחת,
-   או באישור הדוגם כשהאחסון מגיע ל-80% — מהישנה לחדשה, עד כ-50%.
+/* ---------- נפח האחסון ומחיקת רשומות (דני, 23.11.2026; מחיקה בכל זמן — דני, 24.11.2026) ----------
+   המסמכים נשמרים בתיק הלקוח בענן. הדוגם מוחק רשומה מהאייפד מתי שירצה, אחת אחת, חוץ מהרשומה הפתוחה.
+   כשהאחסון מגיע ל-80% האפליקציה מציעה בעצמה רק רשומות מעל חודש וחצי — מהישנה לחדשה, עד כ-50%.
    תיעוד השינויים של רשומה שנמחקה נשאר במכשיר (IndexedDB, "gone"): בקרקע הוא לא נמצא ב-PDF */
 const DEL_DAYS=45, STORE_WARN=.8, STORE_TARGET=.5, K_CAP="vasa-cap", K_ASKED="vasa-store-asked", STORE_5MB=5*1024*1024;
 /* גודל כפי שהדפדפן סופר: בית לתו, ושניים כשיש תו שאינו לטיני */
@@ -696,7 +696,9 @@ function ageDays(e){
   const last=Math.max(Date.parse(e.date||"")||0, Date.parse(e.updated||"")||0);
   return last ? Math.floor((Date.now()-last)/864e5) : 0;
 }
-const canDelete=e=>e.id!==S.id && localIdx.some(x=>x.id===e.id) && ageDays(e)>=DEL_DAYS;
+const canDelete=e=>e.id!==S.id && localIdx.some(x=>x.id===e.id);
+/* מה שהאפליקציה מציעה בעצמה כשהאחסון מתמלא — רק רשומות ישנות */
+const canOffer=e=>canDelete(e) && ageDays(e)>=DEL_DAYS;
 const goneAll=()=>certTx("readonly",s=>s.getAll(),"gone");
 /* מוחק רשומה אחת. תיעוד השינויים נשמר ונקרא חזרה לפני המחיקה; אם נכשל — לא מוחקים */
 const deleteDoc=id=>certDo(async()=>{
@@ -736,7 +738,7 @@ function askDelete(e){
 function cleanupPlan(st){
   const plan=[];
   let left=st.used;
-  const old=localIdx.filter(canDelete).sort((a,b)=>ageDays(b)-ageDays(a));
+  const old=localIdx.filter(canOffer).sort((a,b)=>ageDays(b)-ageDays(a));
   for(const e of old){
     if(left<=st.cap*STORE_TARGET) break;
     const size=keyBytes(kDoc(e.id));
@@ -3497,7 +3499,7 @@ function viewDocs(){
   return el("div",{},el("div",{class:"card"},
     el("h2",{},"רשומות"),
     el("div",{class:"sub"},(db?"ימי הדיגום במכשיר הזה ובמאגר המשותף. ":"ימי הדיגום שנשמרו במכשיר הזה. ")+
-      "שם הרשומה נבנה מהאתר, התאריך, אות היום ודוגם 1. אפשר למחוק רשומה חודש וחצי אחרי העבודה או העריכה האחרונה"),
+      "שם הרשומה נבנה מהאתר, התאריך, אות היום ודוגם 1. אפשר למחוק כל רשומה חוץ מהפתוחה — אחרי שהמסמכים שלה בתיק הלקוח בענן"),
     el("div",{class:"bar",style:"margin:0 0 14px"},
       el("button",{class:"btn",type:"button",onclick:newDocDialog},"שמירה ורשומה חדשה"),
       el("button",{class:"btn ghost",type:"button",onclick:importInstall},"ייבוא התקנה"),

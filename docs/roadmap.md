@@ -24,7 +24,7 @@ The change log must survive a merge.
 
 ## Storage capacity
 
-Certificate pages moved to IndexedDB on 23.11.2026 after a device filled up; the rest is still in `localStorage`, and records can be deleted after 45 days (23.11.2026). `localStorage` is about 5 MB per origin on iOS. Signatures (PNG), the drawn sketch (PNG) and the sketch photo (JPEG, ≤1000 px) take most of the space. A heavy user could fill it after some dozens of days, and then the red "האחסון במכשיר מלא" pill appears.
+Certificate pages moved to IndexedDB on 23.11.2026 after a device filled up; the rest is still in `localStorage`, and records can be deleted (after 45 days from 23.11.2026, at any time from 24.11.2026). `localStorage` is about 5 MB per origin on iOS. Signatures (PNG), the drawn sketch (PNG) and the sketch photo (JPEG, ≤1000 px) take most of the space. A heavy user could fill it after some dozens of days, and then the red "האחסון במכשיר מלא" pill appears.
 
 **Direction:**
 - Move records to **IndexedDB**, which has a much larger quota and is async, with a one-time migration from `localStorage`.
