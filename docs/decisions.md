@@ -2,6 +2,11 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 24.11.2026 — Soil gas: one photo per well
+
+- **One photo per well** (Danny), in the installation tab (sampling-only and imported records: in the sampling tab). Stamped with the site, the well name and the date; file "<site> <well> <ddmmyy>.jpg"; attached with the other photos. Same rules as borehole photos (re-shoot not logged, removal logged).
+  - Engineering: the photo is keyed to the well id, not its name, so renaming a well keeps the photo (the name already burned into the image stays as it was). Photos stay on the iPad that took them: an imported installation arrives without them.
+
 ## 24.11.2026 — Field photos: site and borehole
 
 - **Site photos** (Danny): at the end of the day tab (soil) and the survey-details tab (soil gas), as many as wanted. Stamped with the site name and the date.
