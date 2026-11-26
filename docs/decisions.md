@@ -2,6 +2,31 @@
 
 Product and technical decisions, newest first. "Danny" means the owner's decision; the rest are engineering choices made within his requirements. Before reversing anything here, ask.
 
+## 26.11.2026 — Full review: fixes
+
+An independent code review of 23–26.11 changes plus end-to-end runs (upgrade from the 23.11 version, reload, real GPS dialog, locked record, installation export → import) found and fixed:
+- **"-27" printed as "27-"** on form 59 (right-to-left canvas): the canister pressure cells are drawn left-to-right. Positive values print byte-identical to before.
+- **A photo missing on this iPad blocked the whole email** (e.g. a record opened from the shared database, which carries the photo list but not the images): missing photos are skipped and the sampler is told which.
+- **Photos of a renamed borehole or a deleted well were invisible but still emailed**: they are shown at the end of their card ("לא ביומן" / "באר שנמחקה") with "הסר".
+- **A touch while scrolling filled a date field with today without saving it**: undone if the field did not get focus.
+- **IndexedDB upgrade blocked by another open tab of the old version**: connections close on `versionchange`.
+- **A photo finished processing after the record was locked**: discarded.
+- Not changed (product decisions, noted): any record except the open one can be deleted, also one open in another tab; the image stamp keeps the site name at capture time while file names follow the current site name.
+
+## 26.11.2026 — Change-log rules from the answers; the question is turned off
+
+- **The "האם לתעד שינוי?" question is off** (Danny): `ASK_LOG = false`. The answers already collected stay on the devices and can still be exported.
+- **Answers analysed** (7 records from Oran, 11–25.11.2026, soil and gas): 56 logged changes, 53 "כן", 3 "לא". Every field category answered "כן" stays logged: well and blank sampling fields, canister number and volume, times, names, site and address, accreditation, certificate pages, sampler and lab signatures, soil borehole / depth / moisture / packs.
+- **New rule 6** (from the answers): re-signing or clearing the **handover signature** (`sig.by`, `sig.bySplit`) **before that lab's representative has signed** is not logged. Both "לא" answers were this case (the same record, a minute apart, before the lab signed). Once the lab has signed, every signature change is logged as before.
+- **Not changed:** unticking a sample for custody (`toCoc`) stays logged — one "לא" and one "כן", no clear rule.
+
+## 26.11.2026 — Field requests: calendar, canister vacuum, GPS, tube defaults
+
+- **Calendar opens on today** (Danny: on the iPad every date picker opened in August). An empty date field gets today's date the moment it is touched (touchstart / mousedown / focus), before the picker opens; closing the picker without a change keeps today, as the iPad already does with time fields. A first entry, so not logged. Not reproducible on a desktop: iPad check needed.
+- **Canister pressure is shown negative** (Danny: it is a vacuum; the sampler types the number without a minus). Canister start / end, split and blanks: a positive number typed is stored and shown as negative ("28" → "-28"), so the screen, forms 59 and the Excel show "-28" (`txt` option `neg`). The 26–30 / 3–5 checks compare the value without its sign. Values saved before 26.11.2026 stay as they were. The leak test (shut-in) is unchanged (Danny).
+- **GPS keeps the more accurate point** (Danny): a new reading replaces a GPS point only when its accuracy is smaller; otherwise the old point stays and a message says so. A typed point has no accuracy and is replaced.
+- **Tube defaults** (Danny: "the faded grey should be the default"): installation tube type "טפלון", tube diameter "1/4 אינץ׳"; sampling-only tube "טפלון 1/4 אינץ׳". In `auto`, like the soil defaults. Records saved before keep their values. The other grey hints are units or examples (in/hg, ppm, °C, SG-1, ק1) and stay hints.
+
 ## 24.11.2026 — Soil gas: one photo per well
 
 - **One photo per well** (Danny), in the installation tab (sampling-only and imported records: in the sampling tab). Stamped with the site, the well name and the date; file "<site> <well> <ddmmyy>.jpg"; attached with the other photos. Same rules as borehole photos (re-shoot not logged, removal logged).

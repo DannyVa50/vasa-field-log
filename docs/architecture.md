@@ -195,13 +195,14 @@ The app keeps a change log because the records are accredited quality records. T
   3. **Analyses** (keys ending `.tests`): adding is not a change; removing an analysis that was already chosen is logged.
   4. **Deleting an empty custody row** (`rowHasData` false: no name, depth, PID, tool, packs, note or analyses) is not logged — `deleteRow` skips `logChange`.
   5. Signatures, handover fields and the sketch are always logged (they go through the normal "existing value changed" path). **Once any lab has signed** (`labSignedAny()`), rules 1 and 3 no longer apply: every tick and every added analysis is logged.
+  6. Re-signing or clearing the handover signature (`sig.by` / `sig.bySplit`) before that lab's representative signed is not logged (Danny, 26.11.2026, from the answers).
 - **Copied values and defaults are not changes.** When a new log row inherits the borehole, time, soil or colour, those keys go into `sample.auto`; so do the defaults (odour, tool, packs, type) and `storage.tempOk`. The first edit of such a key removes it from `auto` without logging.
 - **Pending changes are flushed** (`flushChanges`) before switching records and on `pagehide`, so a change lands in the right record.
 - Unticking, signatures ("signed" / "cleared"), the sketch, deleting rows with data, locking and reopening are all logged.
 - `actor(key)`: in a soil record, `head.s1`. In a gas record, keys `gas.inst.*` and `sig.gi` → the installation sampler; anything else → the sampling sampler, or the installation sampler until one is chosen. Lock / reopen entries use `actor()`.
 - The log cannot be edited or deleted from the UI. `viewHist` shows it, newest first.
 
-**Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026).** When `logChange` sees a change that will be logged (`isChange(origin, to, key)`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
+**Learning period — "האם לתעד שינוי?" (`ASK_LOG`, from 22.10.2026). Turned off 26.11.2026 (`ASK_LOG = false`); the code and the export of collected answers remain.** When `logChange` sees a change that will be logged (`isChange(origin, to, key)`) and the key has no question pending yet, `askLog` queues an in-app question. Questions show one at a time (`askQueue`, `nextAsk`), and the dialog can't be dismissed without an answer. Rules:
 - **The answer never decides whether the change is logged.** `commitChange` logs exactly as before and adds `ask` ("כן" / "לא" / "" if not answered yet) and `k` (the change key, e.g. `head.calLab` or `<sample id>.tests`).
 - If the 3-second commit happens before the answer, `q.entry` points at the logged entry, and the answer is written into it and saved.
 - `shown()` shows booleans as "מסומן" / "לא מסומן" in the dialog only. The log still stores `true` / `false`.
