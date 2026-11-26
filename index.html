@@ -326,9 +326,10 @@ const newId = () => `day-${todayISO()}-${crypto.randomUUID().slice(0,8)}`;
    imported — כשההתקנה יובאה מקובץ של אייפד אחר: {from, by, exportedAt, at, file}. חלק ההתקנה אז לקריאה בלבד */
 function blankGas(mode){
   return {mode:mode==="manual"?"manual":"full",
-    inst:{date:"", s1:"", weather:[], method:"", methodOther:"", boreDia:"", tubeType:"", tubeDia:"", probe:"",
+    /* ברירות מחדל (דני, 26.11.2026): צנרת טפלון 1/4 אינץ׳. ב-auto — השינוי הראשון מהן אינו נרשם */
+    inst:{date:"", s1:"", weather:[], method:"", methodOther:"", boreDia:"", tubeType:"טפלון", tubeDia:"1/4 אינץ׳", probe:"", auto:["tubeType","tubeDia"],
       pid:"", lamp:"", pidOpen:"", calLab:false, cal100:false, notes:""},
-    samp:{date:"", s1:"", weather:[], instDate:"", tube:"", purgeVols:"", canSupplier:"", canSupplierOther:"", canDate:"",
+    samp:{date:"", s1:"", weather:[], instDate:"", tube:"טפלון 1/4 אינץ׳", auto:["tube"], purgeVols:"", canSupplier:"", canSupplierOther:"", canDate:"",
       pid:"", lamp:"", calLab:false, cal100:false, deviation:"", notes:"", notesSplit:""},
     wells:[], blanks:[], imported:null};
 }
@@ -425,7 +426,9 @@ function normalize(d){
   n.coords = d.coords && typeof d.coords==="object" && !Array.isArray(d.coords) ? d.coords : {};
   const g=d.gas||{};
   n.gas={...b.gas, ...g, mode:g.mode==="manual"?"manual":"full",
-    inst:{...b.gas.inst, ...(g.inst||{})}, samp:{...b.gas.samp, ...(g.samp||{})},
+    /* רשומה מלפני ברירות המחדל של הצנרת — נשארת כמו שהייתה, וכל שינוי בה נרשם */
+    inst:{...b.gas.inst, ...(g.inst ? {tubeType:"", tubeDia:"", auto:[], ...g.inst} : {})},
+    samp:{...b.gas.samp, ...(g.samp ? {tube:"", auto:[], ...g.samp} : {})},
     wells:(Array.isArray(g.wells)?g.wells:[]).map(w=>({...blankWell(), ...w})),
     blanks:(Array.isArray(g.blanks)?g.blanks:[]).map(b=>({...blankBlank(b.type), ...b})), imported:g.imported||null};
   /* שם מעבדה שהוקלד חופשי בגרסאות קודמות ואינו ברשימה — עובר ל"אחר" עם אותו שם, כך שהמודפס לא משתנה */
@@ -465,8 +468,8 @@ const pendingChg = new Map();
 
 /* תקופת למידה (מ-22.10.2026, החלטת דני): לפני כל שינוי שנרשם בתיעוד נשאל הדוגם "האם לתעד שינוי?".
    השינוי נרשם בכל מקרה — התשובה רק נשמרת לידו (ask, ו-k = מפתח השדה), ונשלחת לדני מלשונית תיעוד השינויים.
-   לפי התשובות יעודכנו הכללים מתי לתעד. דני מכבה את השאלה בגרסה הבאה: ASK_LOG=false */
-const ASK_LOG = true;
+   לפי התשובות יעודכנו הכללים מתי לתעד. כבוי מ-26.11.2026 (דני), אחרי ניתוח התשובות של אורן: 56 שינויים, 53 "כן" */
+const ASK_LOG = false;
 /* תיבת סימון נרשמת כ-true/false — לדוגם מוצג "מסומן" / "לא מסומן" */
 const shown = v => v==="true" ? "מסומן" : v==="false" ? "לא מסומן" : (v || "ריק");
 const askQueue = [];
@@ -514,6 +517,10 @@ function isChange(from, to, key){
   const signed = labSignedAny();
   if(from === false && !signed) return false;
   if(f === "") return false;
+  /* 6. חתימה חוזרת או מחיקה של חתימת המוסר לפני שנציג המעבדה חתם — לא נרשמת.
+     תשובות אורן (26.11.2026): פעמיים "לא" על חתימת המוסר, לפני חתימת המעבדה */
+  const H = Object.values(HAND).find(H=>key==="sig."+H.by);
+  if(H && !S.sigs[H.lab]) return false;
   if(/\.tests$/.test(key) && !signed && Array.isArray(from) && Array.isArray(to))
     return from.some(x=>!to.includes(x));
   return true;
@@ -620,7 +627,8 @@ function certOpen(){
   if(!certDb) certDb=new Promise((res,rej)=>{
     const q=indexedDB.open("vasa-files",3);
     q.onupgradeneeded=()=>{ for(const n of ["cert","gone","photo"]) if(!q.result.objectStoreNames.contains(n)) q.result.createObjectStore(n); };
-    q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); q.onblocked=()=>rej(new Error("blocked"));
+    q.onsuccess=()=>{ const d=q.result; d.onversionchange=()=>{ d.close(); certDb=null; }; res(d); };
+    q.onerror=()=>rej(q.error); q.onblocked=()=>rej(new Error("blocked"));
   }).catch(e=>{ certDb=null; throw e; });
   return certDb;
 }
@@ -1051,12 +1059,23 @@ function txt(val,on,opts={}){
   if(opts.type==="time"||opts.type==="date"){
     /* באייפד גלגלת השעה/התאריך שולחת change בכל סיבוב. שמירה בכל סיבוב בונה את המסך מחדש
        וחלונית הגלגלת קופצת — לכן הערך נשמר רק כשהחלונית נסגרת */
-    let dirty=false;
+    let dirty=false, pre=false;
+    /* לוח שנה ריק נפתח באייפד על חודש אחר (דני, 26.11.2026: "נפתח באוגוסט") — שדה תאריך ריק מקבל את התאריך של היום
+       ברגע שנוגעים בו, לפני שהלוח נפתח. סגירה בלי שינוי משאירה את היום — כמו שעה, שהאייפד ממלא מעצמו */
+    if(opts.type==="date"){
+      const today=()=>{ if(!i.value && !i.disabled){ i.value=todayISO(); pre=true;
+        /* נגיעה בזמן גלילה לא פותחת את הלוח — מחזירים לריק, כדי שלא יוצג תאריך שלא נשמר */
+        setTimeout(()=>{ if(pre && document.activeElement!==i){ pre=false; i.value=""; } },800); } };
+      i.addEventListener("touchstart",today,{passive:true}); i.addEventListener("mousedown",today); i.addEventListener("focus",today);
+    }
     i.addEventListener("change",()=>{ if(document.activeElement===i) dirty=true; else on(i.value); });
-    i.addEventListener("blur",()=>{ if(dirty){ dirty=false; on(i.value); } });
+    i.addEventListener("blur",()=>{ if(dirty){ dirty=false; pre=false; on(i.value); } else if(pre){ pre=false; if(i.value) on(i.value); } });
   } else if(opts.type==="number"){
     /* ".5" נשמר כ-"0.5" (ענב, 19.11.2026) */
-    i.addEventListener("change",()=>{ const v=i.value.replace(/^(-?)\./,"$10."); i.value=v; on(v); });
+    /* neg — לחץ קניסטר (ואקום): הדוגם מקליד בלי מינוס, והערך נשמר ומוצג שלילי (דני, 26.11.2026) */
+    i.addEventListener("change",()=>{ let v=i.value.replace(/^(-?)\./,"$10.");
+      if(opts.neg && v.trim()!=="" && Number(v)>0) v="-"+v.trim();
+      i.value=v; on(v); });
   } else i.addEventListener("change",()=>on(i.value));
   return i;
 }
@@ -1535,7 +1554,7 @@ function wellSampIssues(w, full){
   if(outside(num(w.flow),FLOW)) r.push(`ספיקה ${w.flow} — מחוץ לטווח ${FLOW[0]} עד ${FLOW[1]} מ״ל לדקה`);
   for(const [k,rng,label] of [["canFrom",CAN_START,"לחץ התחלתי בקניסטר"],["canTo",CAN_END,"לחץ בסיום"],
       ...(w.split?[["spCanFrom",CAN_START,"פיצול — לחץ התחלתי"],["spCanTo",CAN_END,"פיצול — לחץ בסיום"]]:[])])
-    if(outside(num(w[k]),rng)) r.push(`${label} ${w[k]} — מחוץ לטווח ${rng[0]} עד ${rng[1]} אינץ׳ כספית`);
+    if(outside(Math.abs(num(w[k])),rng)) r.push(`${label} ${w[k]} — מחוץ לטווח ${rng[0]} עד ${rng[1]} אינץ׳ כספית`);
   if(w.sStart && w.sEnd && w.sEnd<w.sStart) r.push("שעת סיום הדיגום לפני שעת ההתחלה");
   if(sampled && !w.ipa) r.push("לא סומנה בדיקת IPA");
   /* כפר הס, 17.11.2026: TO-15 בוטל בטעות בבאר הראשונה — דני (18.11.2026) */
@@ -1592,8 +1611,8 @@ function wellSampCard(w,i,manual){
       t("purgeMin","משך השטיפה",{type:"number",ph:"דקות"},need!=null?`נדרש ${need}`:null),
       t("sStart","שעת התחלת הדיגום",{type:"time"}),
       t("sEnd","שעת סיום הדיגום",{type:"time"}),
-      t("canFrom","לחץ הקניסטר — מ-",{type:"number",ph:"in/hg"},"בין 26 ל-30"),
-      t("canTo","לחץ הקניסטר — עד",{type:"number",ph:"in/hg"},"בין 3 ל-5"),
+      t("canFrom","לחץ הקניסטר — מ-",{type:"number",ph:"in/hg",neg:true},"בין 26 ל-30"),
+      t("canTo","לחץ הקניסטר — עד",{type:"number",ph:"in/hg",neg:true},"בין 3 ל-5"),
       t("pidAfter","PID לאחר הדיגום",{type:"number",ph:"ppm"}),
       t("sNote","הערות")),
     el("div",{class:"chips",style:"margin-top:10px"},
@@ -1601,8 +1620,8 @@ function wellSampCard(w,i,manual){
     w.split ? el("div",{class:"grid",style:"margin-top:10px"},
       t("spCan","פיצול — מס׳ קניסטר"),
       field("פיצול — נפח",sel(w.spVol,CAN_VOLS,swell(w,"spVol")),"ליטר"),
-      t("spCanFrom","פיצול — לחץ מ-",{type:"number",ph:"in/hg"},"בין 26 ל-30"),
-      t("spCanTo","פיצול — לחץ עד",{type:"number",ph:"in/hg"},"בין 3 ל-5")) : null,
+      t("spCanFrom","פיצול — לחץ מ-",{type:"number",ph:"in/hg",neg:true},"בין 26 ל-30"),
+      t("spCanTo","פיצול — לחץ עד",{type:"number",ph:"in/hg",neg:true},"בין 3 ל-5")) : null,
     bad.length ? el("div",{class:"note warn",style:"margin-top:10px"},bad.join(" · ")) : null);
 }
 const BLANK_LABEL={EB:"בלאנק חומרים", AB:"בלאנק רקע"};
@@ -1626,16 +1645,17 @@ function dropLastBlank(){
 function blankCard(b){
   const t=(k,label,opts,hint)=>field(label,txt(b[k],x=>setBlank(b,k,x),opts),hint);
   const bad=[];
-  if(outside(num(b.canFrom),CAN_START)) bad.push(`לחץ התחלתי ${b.canFrom} — מחוץ לטווח 26 עד 30`);
-  if(outside(num(b.canTo),CAN_END)) bad.push(`לחץ בסיום ${b.canTo} — מחוץ לטווח 3 עד 5`);
+  /* לחץ הקניסטר הוא ואקום — נרשם גם עם מינוס (דני, 26.11.2026); הטווח נבדק בלי הסימן */
+  if(outside(Math.abs(num(b.canFrom)),CAN_START)) bad.push(`לחץ התחלתי ${b.canFrom} — מחוץ לטווח 26 עד 30`);
+  if(outside(Math.abs(num(b.canTo)),CAN_END)) bad.push(`לחץ בסיום ${b.canTo} — מחוץ לטווח 3 עד 5`);
   return el("div",{class:"well"+(bad.length?" bad":""),"data-id":b.id},
     el("div",{class:"wellhead"},el("b",{},`${BLANK_LABEL[b.type]} · ${b.name}`)),
     el("div",{class:"grid"},
       t("name","שם"), t("can","מס׳ הקניסטר"),
       field("נפח",sel(b.vol,CAN_VOLS,x=>setBlank(b,"vol",x)),"ליטר"),
       t("sStart","שעת התחלה",{type:"time"}), t("sEnd","שעת סיום",{type:"time"}),
-      t("canFrom","לחץ הקניסטר — מ-",{type:"number",ph:"in/hg"},"בין 26 ל-30"),
-      t("canTo","לחץ הקניסטר — עד",{type:"number",ph:"in/hg"},"בין 3 ל-5"),
+      t("canFrom","לחץ הקניסטר — מ-",{type:"number",ph:"in/hg",neg:true},"בין 26 ל-30"),
+      t("canTo","לחץ הקניסטר — עד",{type:"number",ph:"in/hg",neg:true},"בין 3 ל-5"),
       t("note","הערות")),
     el("div",{class:"chips",style:"margin-top:10px"},toggle(b.to15,x=>setBlank(b,"to15",x),"TO-15")),
     bad.length ? el("div",{class:"note warn",style:"margin-top:10px"},bad.join(" · ")) : null);
@@ -1799,7 +1819,7 @@ async function addPhoto(file, kind, b){
       const back=await certTx("readonly",s=>s.get(p.id),"photo");
       if(!back || !back.buf || back.buf.byteLength!==buf.byteLength) throw new Error("הבדיקה אחרי השמירה נכשלה");
     });
-    if(S.id!==id){ certDo(()=>certTx("readwrite",s=>s.delete(p.id),"photo")).catch(()=>{}); return; }
+    if(S.id!==id || RO()){ certDo(()=>certTx("readwrite",s=>s.delete(p.id),"photo")).catch(()=>{}); return; }
     photoUrl.set(p.id, URL.createObjectURL(blob));
     const old=ONE_PER[kind] ? S.photos.find(x=>x.kind===kind && x.b===b) : null;
     if(old){
@@ -1821,7 +1841,9 @@ function removePhoto(p, name){
   }, true);
 }
 /* טעינת התמונות של הרשומה הפתוחה לתצוגה */
+let photoRec="";
 const loadPhotos=()=>certDo(async()=>{
+  if(photoRec!==S.id){ photoRec=S.id; photoMiss.clear(); }
   const id=S.id; let changed=false;
   for(const p of S.photos){
     if(photoUrl.has(p.id) || photoMiss.has(p.id)) continue;
@@ -1863,6 +1885,14 @@ function sitePhotosCard(){
           el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"))))):null);
 }
 /* קרקע: צילום אחד לכל קידוח שביומן */
+/* צילום שהקידוח או הבאר שלו כבר לא ברשומה (מספר הקידוח שונה, הבאר נמחקה) — מוצג עם "הסר", כדי שלא יישלח בלי שרואים אותו */
+function orphanTile(p,label,names){
+  return el("div",{"data-id":"orphan-"+p.id},
+    el("div",{class:"bar",style:"margin:0 0 6px"},el("b",{},label)),
+    photoThumb(p,names.get(p.id)),
+    el("div",{class:"bar",style:"margin-top:6px"},el("span",{class:"hint"},"נשלח במייל"),el("span",{class:"spacer"}),
+      el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר")));
+}
 function borePhotosCard(){
   const borings=[...new Set(S.samples.map(s=>String(s.boring||"").trim()).filter(Boolean))];
   const names=photoNames();
@@ -1879,7 +1909,14 @@ function borePhotosCard(){
             el("button",{class:p?"btn ghost sm":"btn sm",type:"button",disabled:RO(),onclick:()=>cam.click()},p?"צילום חוזר":"צילום"),
             el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
             p?el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"):null, cam, lib));
-      })):el("div",{class:"empty"},"אין עדיין קידוחים ביומן."));
+      })):el("div",{class:"empty"},"אין עדיין קידוחים ביומן."),
+    ...orphans("bore",new Set(borings),b=>`קידוח ${b} — לא ביומן`,names));
+}
+function orphans(kind,keys,label,names){
+  const list=S.photos.filter(p=>p.kind===kind && !keys.has(p.b));
+  return list.length?[el("div",{class:"sub",style:"margin:12px 0 6px"},"צילומים שהקידוח או הבאר שלהם כבר לא ברשומה:"),
+    el("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"},
+      ...list.map(p=>orphanTile(p,label(p.b),names)))]:[];
 }
 /* גז קרקע: צילום אחד לכל באר — בלשונית ההתקנה, ובדיגום בלבד או ברשומה מיובאת — בלשונית הדיגום */
 function wellPhotosCard(){
@@ -1897,15 +1934,18 @@ function wellPhotosCard(){
             el("button",{class:p?"btn ghost sm":"btn sm",type:"button",disabled:RO(),onclick:()=>cam.click()},p?"צילום חוזר":"צילום"),
             el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>lib.click()},"מהתמונות"),
             p?el("button",{class:"btn ghost sm",type:"button",disabled:RO(),onclick:()=>removePhoto(p,names.get(p.id))},"הסר"):null, cam, lib));
-      })):el("div",{class:"empty"},"אין עדיין בארות."));
+      })):el("div",{class:"empty"},"אין עדיין בארות."),
+    ...orphans("well",new Set(wells.map(w=>w.id)),()=>"באר שנמחקה",names));
 }
+/* צילום שאינו באייפד הזה (רשומה שנפתחה ממכשיר אחר) — מדלגים עליו ומודיעים, ולא עוצרים את כל המייל */
 async function photoFiles(){
-  const names=photoNames(), out=[];
+  const names=photoNames(), out=[], miss=[];
   for(const p of S.photos){
-    const blob=await photoBlob(p.id);
-    if(!blob) throw new Error(`הצילום ${names.get(p.id)} לא נמצא באחסון המכשיר`);
+    let blob=null; try{ blob=await photoBlob(p.id); }catch(e){}
+    if(!blob){ miss.push(names.get(p.id)+".jpg"); continue; }
     out.push({name:names.get(p.id)+".jpg", blob});
   }
+  if(miss.length) alert(`${miss.length===1?"צילום אחד לא נמצא באייפד הזה ולא צורף":`${miss.length} צילומים לא נמצאו באייפד הזה ולא צורפו`} למייל:\n${miss.join("\n")}`);
   return out;
 }
 
@@ -1986,6 +2026,15 @@ function gpsDialog(title,onSave){
   draw(); document.body.append(m);
 }
 
+/* מדידה חוזרת דורסת נקודת GPS קודמת רק כשהיא מדויקת יותר (דני, 26.11.2026). נקודה שהוקלדה — אין דיוק להשוות, נדרסת */
+function keepBest(it,p){
+  const c=it.c;
+  if(c.src==="GPS" && num(c.acc)>=0 && !(num(p.acc)<num(c.acc))){
+    flash=`${it.label}: נשאר המיקום הקודם (±${c.acc} מ׳). המדידה החדשה (±${p.acc} מ׳) לא מדויקת יותר`;
+    render(); return;
+  }
+  it.gps(p);
+}
 /* כרטיס נ"צ: שורה לכל קידוח / באר. item: {label, c:{x,y,acc,t,src}, ro, manual(k,v), gps(c)} */
 function coordsCard(title, sub, items){
   if(!gpsOn() && !items.some(it=>it.c.x||it.c.y)) return null;
@@ -2001,7 +2050,7 @@ function coordsCard(title, sub, items){
       el("td",{class:"mono"},txt(c.y,v=>it.manual("y",v),{type:"number",ph:"Y"})),
       el("td",{},info, far?el("div",{class:"hint"},`מעל ${GPS_MAX} מ׳`):null),
       el("td",{},gpsOn() && !it.ro ? el("button",{class:"btn ghost sm",type:"button",
-        onclick:()=>gpsDialog(it.label,it.gps)},has?"מדידה חוזרת":"מדידת מיקום") : null))); }
+        onclick:()=>gpsDialog(it.label,p=>keepBest(it,p))},has?"מדידה חוזרת":"מדידת מיקום") : null))); }
     finally{ roInst=false; }
   }
   return el("div",{class:"card"},
@@ -3006,7 +3055,7 @@ async function renderGasCoc(isSplit){
       const box=j=>rowBox(F,p,i,F.cols[j]), c={size:8,align:"center"};
       [r.name,r.can,r.vol,r.depth,r.vacFrom,r.vacTo,r.flow,r.purgeMin,r.pidAfter].forEach((v,j)=>put(gg,v,box(j),c));
       if(r.ipa) tick(gg,box(9),3.4);
-      put(gg,r.sStart,box(10),c); put(gg,r.sEnd,box(11),c); put(gg,r.canFrom,box(12),c); put(gg,r.canTo,box(13),c);
+      put(gg,r.sStart,box(10),c); put(gg,r.sEnd,box(11),c); put(gg,r.canFrom,box(12),{...c,ltr:true}); put(gg,r.canTo,box(13),{...c,ltr:true});
       if(r.to15) tick(gg,box(14),3.4);
       put(gg,[pv.mixed&&r.vols?`${r.vols} נפחי שטיפה`:"",r.note].filter(Boolean).join(" · "),box(15),{size:7});
     });
